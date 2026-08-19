@@ -19,7 +19,7 @@ from shared.config import config as config_store
 from shared.logger import get_logger
 
 if TYPE_CHECKING:
-    from bot import ClubhouseBot
+    from bot import AgentGinnBot
 
 logger = get_logger(__name__)
 
@@ -27,7 +27,7 @@ MODULE_NAMES = ("sesami", "panpipes", "abacus", "khartes")
 
 
 class SystemCog(commands.Cog):
-    def __init__(self, bot: "ClubhouseBot") -> None:
+    def __init__(self, bot: "AgentGinnBot") -> None:
         self.bot = bot
 
     system_group = app_commands.Group(name="system", description="Bot管理コマンド")

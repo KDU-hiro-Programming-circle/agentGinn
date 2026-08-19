@@ -23,7 +23,7 @@ logger = log.get_logger(__name__)
 MODULE_NAMES = ("sesami", "panpipes", "abacus", "khartes")
 
 
-class ClubhouseBot(commands.Bot):
+class AgentGinnBot(commands.Bot):
     def __init__(self, settings: Settings) -> None:
         intents = discord.Intents.default()
         intents.message_content = True
@@ -98,7 +98,7 @@ async def main() -> None:
     if not settings.discord_token:
         raise SystemExit("DISCORD_TOKEN is not set. Run bootstrap.py first, then fill in .env.")
 
-    bot = ClubhouseBot(settings)
+    bot = AgentGinnBot(settings)
     async with bot:
         await bot.start(settings.discord_token)
 

@@ -87,7 +87,7 @@ def _read_database_path() -> str:
     from dotenv import dotenv_values
 
     values = dotenv_values(ENV_PATH)
-    return values.get("DATABASE_PATH") or "database/clubhouse.db"
+    return values.get("DATABASE_PATH") or "database/agentginn.db"
 
 
 async def ensure_database() -> None:

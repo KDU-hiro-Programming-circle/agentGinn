@@ -34,5 +34,5 @@ def load_settings(env_path: str | Path | None = None) -> Settings:
         guild_id=int(guild_id_raw) if guild_id_raw else None,
         switchbot_token=os.getenv("SWITCHBOT_TOKEN", "").strip(),
         switchbot_secret=os.getenv("SWITCHBOT_SECRET", "").strip(),
-        database_path=os.getenv("DATABASE_PATH", "database/clubhouse.db").strip(),
+        database_path=os.getenv("DATABASE_PATH", "database/agentginn.db").strip(),
     )

@@ -28,7 +28,7 @@ def setup(level: str = "INFO") -> None:
     root.addHandler(console)
 
     file_handler = logging.handlers.RotatingFileHandler(
-        LOG_DIR / "clubhouse.log",
+        LOG_DIR / "agentginn.log",
         maxBytes=5 * 1024 * 1024,
         backupCount=5,
         encoding="utf-8",
