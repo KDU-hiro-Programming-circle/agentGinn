@@ -1,0 +1,52 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Sesami Dashboard</title>
+  <link rel="stylesheet" href="/sesami/static/style.css">
+</head>
+<body>
+  <header>
+    <h1>Sesami Dashboard</h1>
+    <span id="last-updated">-</span>
+  </header>
+
+  <section class="stat-grid">
+    <div class="stat-card">
+      <h2>気温</h2>
+      <p class="stat-value" id="stat-temperature">-- ℃</p>
+    </div>
+    <div class="stat-card">
+      <h2>湿度</h2>
+      <p class="stat-value" id="stat-humidity">-- %</p>
+    </div>
+    <div class="stat-card">
+      <h2>CO2</h2>
+      <p class="stat-value" id="stat-co2">-- ppm</p>
+    </div>
+    <div class="stat-card">
+      <h2>CPU温度</h2>
+      <p class="stat-value" id="stat-cpu-temperature">-- ℃</p>
+    </div>
+  </section>
+
+  <section class="chart-grid">
+    <div class="chart-card">
+      <h2>気温 / 湿度</h2>
+      <canvas id="chart-sensor"></canvas>
+    </div>
+    <div class="chart-card">
+      <h2>CO2</h2>
+      <canvas id="chart-co2"></canvas>
+    </div>
+    <div class="chart-card">
+      <h2>CPU温度</h2>
+      <canvas id="chart-cpu"></canvas>
+    </div>
+  </section>
+
+  <script src="/sesami/static/chart.min.js"></script>
+  <script src="/sesami/static/script.js"></script>
+</body>
+</html>

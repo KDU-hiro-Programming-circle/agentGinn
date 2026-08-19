@@ -1,0 +1,8 @@
+{
+  "name": "khartes",
+  "display_name": "Khartes",
+  "description": "名刺作成（ひな形）",
+  "command_group": "khartes",
+  "has_dashboard": false,
+  "has_scheduler_jobs": false
+}

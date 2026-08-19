@@ -1,0 +1,8 @@
+{
+  "name": "panpipes",
+  "display_name": "Panpipes",
+  "description": "図書貸出管理",
+  "command_group": "panpipes",
+  "has_dashboard": false,
+  "has_scheduler_jobs": true
+}

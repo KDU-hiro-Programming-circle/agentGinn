@@ -1,0 +1,12 @@
+{
+  "admin_roles": [
+    "Admin"
+  ],
+  "command_roles": {
+    "system": ["Admin"],
+    "sesami": ["Admin", "Member"],
+    "panpipes": ["Admin", "Member"],
+    "abacus": ["Admin"],
+    "khartes": ["Admin", "Member"]
+  }
+}

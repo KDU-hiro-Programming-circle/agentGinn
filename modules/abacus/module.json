@@ -1,0 +1,8 @@
+{
+  "name": "abacus",
+  "display_name": "Abacus",
+  "description": "部費管理（ひな形）",
+  "command_group": "abacus",
+  "has_dashboard": false,
+  "has_scheduler_jobs": false
+}

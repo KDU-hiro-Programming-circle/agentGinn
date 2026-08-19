@@ -1,0 +1,8 @@
+{
+  "name": "sesami",
+  "display_name": "Sesami",
+  "description": "部室環境監視（温湿度・CO2・システム状態・カメラ）",
+  "command_group": "sesami",
+  "has_dashboard": true,
+  "has_scheduler_jobs": true
+}
