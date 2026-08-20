@@ -119,23 +119,36 @@ class PanpipesCog(commands.Cog):
 
     async def _title_autocomplete(self, current: str) -> list[app_commands.Choice[str]]:
         books = await models.search_books(current or "", limit=25)
-        return [app_commands.Choice(name=b.title, value=b.title) for b in books]
+        # Discord caps both choice name and value at 100 chars; titles (esp.
+        # light novels) can run longer, so submit the book id instead of the
+        # title text -- _resolve_book() below accepts either.
+        return [app_commands.Choice(name=b.title[:100], value=str(b.id)) for b in books]
+
+    async def _resolve_book(self, title: str) -> models.Book | None:
+        """Resolve a /panpipes title argument: either a book id picked from
+        autocomplete, or free-typed text matched via search_books()."""
+        if title.isdigit():
+            book = await models.get_book(int(title))
+            if book is not None:
+                return book
+        books = await models.search_books(title, limit=1)
+        return books[0] if books else None
 
     @panpipes_group.command(name="borrow", description="本を借りる")
     @app_commands.describe(title="本のタイトル")
     @permissions.require("panpipes")
     async def borrow(self, interaction: discord.Interaction, title: str) -> None:
         await interaction.response.defer(thinking=True)
-        books = await models.search_books(title, limit=1)
-        if not books:
+        book = await self._resolve_book(title)
+        if book is None:
             await interaction.followup.send("該当する本が見つかりませんでした。")
             return
         try:
-            borrow = await service.borrow_book(books[0], str(interaction.user.id))
+            borrow = await service.borrow_book(book, str(interaction.user.id))
         except service.PanpipesError as exc:
             await interaction.followup.send(str(exc))
             return
-        await interaction.followup.send(f"『{books[0].title}』を貸出登録しました（返却期限: {borrow.due_at}）。")
+        await interaction.followup.send(f"『{book.title}』を貸出登録しました（返却期限: {borrow.due_at}）。")
 
     @borrow.autocomplete("title")
     async def borrow_autocomplete(self, interaction: discord.Interaction, current: str):
@@ -146,16 +159,16 @@ class PanpipesCog(commands.Cog):
     @permissions.require("panpipes")
     async def return_(self, interaction: discord.Interaction, title: str) -> None:
         await interaction.response.defer(thinking=True)
-        books = await models.search_books(title, limit=1)
-        if not books:
+        book = await self._resolve_book(title)
+        if book is None:
             await interaction.followup.send("該当する本が見つかりませんでした。")
             return
         try:
-            await service.return_book(books[0], str(interaction.user.id))
+            await service.return_book(book, str(interaction.user.id))
         except service.PanpipesError as exc:
             await interaction.followup.send(str(exc))
             return
-        await interaction.followup.send(f"『{books[0].title}』を返却登録しました。")
+        await interaction.followup.send(f"『{book.title}』を返却登録しました。")
 
     @return_.autocomplete("title")
     async def return_autocomplete(self, interaction: discord.Interaction, current: str):
@@ -165,11 +178,11 @@ class PanpipesCog(commands.Cog):
     @app_commands.describe(title="本のタイトル")
     @permissions.require("panpipes")
     async def history(self, interaction: discord.Interaction, title: str) -> None:
-        books = await models.search_books(title, limit=1)
-        if not books:
+        book = await self._resolve_book(title)
+        if book is None:
             await interaction.response.send_message("該当する本が見つかりませんでした。")
             return
-        events = await models.book_history(books[0].id)
+        events = await models.book_history(book.id)
         if not events:
             await interaction.response.send_message("履歴がありません。")
             return

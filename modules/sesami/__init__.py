@@ -28,7 +28,19 @@ async def setup(bot: discord_commands.Bot) -> None:
 
     sesami_cfg = config_store.load("sesami")
     interval = sesami_cfg.get("collector_interval_minutes", 10)
-    scheduler.register_job(MODULE_NAME, "collector", collector.run, "interval", minutes=interval, args=[bot])
+    if 60 % interval == 0:
+        # Divides the hour evenly -- run on the clock (:00, :10, :20, ...)
+        # instead of drifting from whatever minute the bot happened to start.
+        scheduler.register_job(
+            MODULE_NAME, "collector", collector.run, "cron", minute=f"*/{interval}", second=0, args=[bot]
+        )
+    else:
+        logger.warning(
+            "sesami collector_interval_minutes=%s does not divide 60 evenly; "
+            "falling back to a bot-start-relative interval instead of clean clock boundaries",
+            interval,
+        )
+        scheduler.register_job(MODULE_NAME, "collector", collector.run, "interval", minutes=interval, args=[bot])
 
     if sesami_cfg["dashboard"].get("enabled", False):
         web.register_router(MODULE_NAME, dashboard_router, prefix="/sesami")
