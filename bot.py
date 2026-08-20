@@ -9,8 +9,10 @@ import asyncio
 import importlib
 
 import discord
+from discord import app_commands
 from discord.ext import commands
 
+from database.migration import apply_schema
 from shared import logger as log
 from shared import scheduler, web
 from shared.config import config as config_store
@@ -31,6 +33,21 @@ class AgentGinnBot(commands.Bot):
         super().__init__(command_prefix="!", intents=intents)
         self.settings = settings
         self.loaded_modules: set[str] = set()
+        self.tree.on_error = self.on_app_command_error
+
+    async def on_app_command_error(
+        self, interaction: discord.Interaction, error: app_commands.AppCommandError
+    ) -> None:
+        if isinstance(error, app_commands.CheckFailure):
+            message = "このコマンドを実行する権限がありません。"
+        else:
+            logger.exception("unhandled app command error", exc_info=error)
+            message = "コマンドの実行中にエラーが発生しました。"
+
+        if interaction.response.is_done():
+            await interaction.followup.send(message, ephemeral=True)
+        else:
+            await interaction.response.send_message(message, ephemeral=True)
 
     async def setup_hook(self) -> None:
         await self.add_cog(SystemCog(self))
@@ -94,6 +111,9 @@ async def main() -> None:
     system_cfg = config_store.load("system")
     log.setup(level=system_cfg.get("log_level", "INFO"))
     database.init(settings.database_path)
+    # Idempotent: bootstrap.py normally does this, but a bot.py started
+    # without it would otherwise hit "no such table" on module setup.
+    await apply_schema()
 
     if not settings.discord_token:
         raise SystemExit("DISCORD_TOKEN is not set. Run bootstrap.py first, then fill in .env.")
