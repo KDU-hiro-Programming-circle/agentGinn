@@ -54,20 +54,19 @@ STATEMENTS: list[str] = [
     CREATE INDEX IF NOT EXISTS idx_sesami_system_log_recorded_at
         ON sesami_system_log (recorded_at)
     """,
-    # Singleton row (id = 1). last_alert_at columns persist cooldown
-    # across restarts; active columns persist state-machine state so
-    # OFF-mode tracking survives a restart too.
+    # One row per (sensor_key, metric): sensor_key is a config sensors.json
+    # key (e.g. "monitored_id_1") for SwitchBot metrics, or the fixed
+    # literal "system" for cpu_temperature. last_alert_at persists cooldown
+    # across restarts; active persists state-machine state so OFF-mode
+    # tracking survives a restart too.
     """
     CREATE TABLE IF NOT EXISTS sesami_alert_state (
-        id INTEGER PRIMARY KEY CHECK (id = 1),
-        enabled INTEGER NOT NULL DEFAULT 1,
-        temperature_active INTEGER NOT NULL DEFAULT 0,
-        temperature_last_alert_at TEXT,
-        co2_active INTEGER NOT NULL DEFAULT 0,
-        co2_last_alert_at TEXT,
-        cpu_temperature_active INTEGER NOT NULL DEFAULT 0,
-        cpu_temperature_last_alert_at TEXT,
-        updated_at TEXT NOT NULL
+        sensor_key TEXT NOT NULL,
+        metric TEXT NOT NULL,
+        active INTEGER NOT NULL DEFAULT 0,
+        last_alert_at TEXT,
+        updated_at TEXT NOT NULL,
+        PRIMARY KEY (sensor_key, metric)
     )
     """,
     """

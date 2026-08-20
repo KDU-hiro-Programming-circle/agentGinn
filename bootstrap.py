@@ -41,12 +41,11 @@ DEFAULT_CONFIGS: dict[str, dict] = {
     "system": {"log_level": "INFO", "timezone": "Asia/Tokyo"},
     "sesami": {
         "collector_interval_minutes": 10,
+        "sensors": {},
         "alert": {
             "enabled": True,
-            "monitored_device_id": "",
             "channel_id": 0,
-            "cooldown_minutes": 60,
-            "thresholds": {"temperature_c": 28, "co2_ppm": 1000, "cpu_temperature_c": 80},
+            "cpu_temperature": {"threshold_c": 80, "cooldown_minutes": 60},
         },
         "dashboard": {"enabled": True, "port": 8420},
     },

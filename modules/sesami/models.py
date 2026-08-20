@@ -2,13 +2,12 @@
 
 from __future__ import annotations
 
+import uuid
 from dataclasses import dataclass
 from typing import Any
 
 from shared.database import database
 from shared.utils import utcnow_iso
-
-ALERT_METRICS = ("temperature", "co2", "cpu_temperature")
 
 
 @dataclass
@@ -58,11 +57,33 @@ async def insert_system_log(
         )
 
 
-async def latest_sensor_log() -> dict[str, Any] | None:
+async def latest_sensor_log(device_id: str | None = None) -> dict[str, Any] | None:
     async with database.connect() as conn:
-        cur = await conn.execute("SELECT * FROM sesami_sensor_log ORDER BY id DESC LIMIT 1")
+        if device_id is None:
+            cur = await conn.execute("SELECT * FROM sesami_sensor_log ORDER BY id DESC LIMIT 1")
+        else:
+            cur = await conn.execute(
+                "SELECT * FROM sesami_sensor_log WHERE device_id = ? ORDER BY id DESC LIMIT 1",
+                (device_id,),
+            )
         row = await cur.fetchone()
         return dict(row) if row else None
+
+
+async def latest_sensor_log_all() -> list[dict[str, Any]]:
+    """Latest reading per device_id, most recently updated device first."""
+    async with database.connect() as conn:
+        cur = await conn.execute(
+            """
+            SELECT s1.* FROM sesami_sensor_log s1
+            INNER JOIN (
+                SELECT device_id, MAX(id) AS max_id FROM sesami_sensor_log GROUP BY device_id
+            ) s2 ON s1.device_id = s2.device_id AND s1.id = s2.max_id
+            ORDER BY s1.recorded_at DESC
+            """
+        )
+        rows = await cur.fetchall()
+        return [dict(row) for row in rows]
 
 
 async def latest_system_log() -> dict[str, Any] | None:
@@ -72,9 +93,15 @@ async def latest_system_log() -> dict[str, Any] | None:
         return dict(row) if row else None
 
 
-async def sensor_log_history(limit: int = 144) -> list[dict[str, Any]]:
+async def sensor_log_history(device_id: str | None = None, limit: int = 144) -> list[dict[str, Any]]:
     async with database.connect() as conn:
-        cur = await conn.execute("SELECT * FROM sesami_sensor_log ORDER BY id DESC LIMIT ?", (limit,))
+        if device_id is None:
+            cur = await conn.execute("SELECT * FROM sesami_sensor_log ORDER BY id DESC LIMIT ?", (limit,))
+        else:
+            cur = await conn.execute(
+                "SELECT * FROM sesami_sensor_log WHERE device_id = ? ORDER BY id DESC LIMIT ?",
+                (device_id, limit),
+            )
         rows = await cur.fetchall()
         return [dict(row) for row in reversed(rows)]
 
@@ -110,33 +137,50 @@ async def set_camera_enabled(uuid: str, enabled: bool) -> None:
         await conn.execute("UPDATE sesami_cameras SET enabled = ? WHERE uuid = ?", (int(enabled), uuid))
 
 
-# ---- Alert state (singleton row, id = 1) -----------------------------------
-
-
-async def get_alert_state() -> dict[str, Any]:
+async def insert_camera(display_name: str, device_path: str, location: str | None = None) -> Camera:
+    cam_uuid = str(uuid.uuid4())
     async with database.connect() as conn:
-        cur = await conn.execute("SELECT * FROM sesami_alert_state WHERE id = 1")
+        await conn.execute(
+            """
+            INSERT INTO sesami_cameras (uuid, display_name, location, device_path, enabled, created_at)
+            VALUES (?, ?, ?, ?, 1, ?)
+            """,
+            (cam_uuid, display_name, location, device_path, utcnow_iso()),
+        )
+    return Camera(uuid=cam_uuid, display_name=display_name, location=location, device_path=device_path, enabled=True)
+
+
+# ---- Alert state (one row per sensor_key + metric) -------------------------
+
+
+async def get_alert_state(sensor_key: str, metric: str) -> dict[str, Any]:
+    async with database.connect() as conn:
+        cur = await conn.execute(
+            "SELECT * FROM sesami_alert_state WHERE sensor_key = ? AND metric = ?", (sensor_key, metric)
+        )
         row = await cur.fetchone()
         if row is not None:
             return dict(row)
         await conn.execute(
-            "INSERT INTO sesami_alert_state (id, enabled, updated_at) VALUES (1, 1, ?)",
-            (utcnow_iso(),),
+            "INSERT INTO sesami_alert_state (sensor_key, metric, active, updated_at) VALUES (?, ?, 0, ?)",
+            (sensor_key, metric, utcnow_iso()),
         )
-        cur = await conn.execute("SELECT * FROM sesami_alert_state WHERE id = 1")
+        cur = await conn.execute(
+            "SELECT * FROM sesami_alert_state WHERE sensor_key = ? AND metric = ?", (sensor_key, metric)
+        )
         row = await cur.fetchone()
         return dict(row)
 
 
-async def update_alert_metric(metric: str, *, active: bool, last_alert_at: str | None) -> None:
-    if metric not in ALERT_METRICS:
-        raise ValueError(f"unknown alert metric: {metric}")
+async def update_alert_metric(
+    sensor_key: str, metric: str, *, active: bool, last_alert_at: str | None
+) -> None:
     async with database.connect() as conn:
         await conn.execute(
-            f"""
+            """
             UPDATE sesami_alert_state
-            SET {metric}_active = ?, {metric}_last_alert_at = ?, updated_at = ?
-            WHERE id = 1
+            SET active = ?, last_alert_at = ?, updated_at = ?
+            WHERE sensor_key = ? AND metric = ?
             """,
-            (int(active), last_alert_at, utcnow_iso()),
+            (int(active), last_alert_at, utcnow_iso(), sensor_key, metric),
         )

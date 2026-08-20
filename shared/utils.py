@@ -4,14 +4,22 @@ from __future__ import annotations
 
 import asyncio
 import functools
+import re
 from datetime import datetime, timezone
-from typing import Awaitable, Callable, TypeVar
+from typing import Awaitable, Callable, Iterable, TypeVar
 
 T = TypeVar("T")
 
 
 def utcnow_iso() -> str:
     return datetime.now(timezone.utc).isoformat()
+
+
+def next_numbered_key(existing_names: Iterable[str], prefix: str) -> str:
+    """Return "{prefix}{n}" where n is one greater than the highest existing suffix."""
+    pattern = re.compile(rf"^{re.escape(prefix)}(\d+)$")
+    numbers = [int(m.group(1)) for name in existing_names if (m := pattern.match(name))]
+    return f"{prefix}{max(numbers, default=0) + 1}"
 
 
 def format_datetime(iso_str: str, fmt: str = "%Y-%m-%d %H:%M") -> str:

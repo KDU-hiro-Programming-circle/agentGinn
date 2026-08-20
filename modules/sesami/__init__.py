@@ -19,6 +19,7 @@ MODULE_NAME = "sesami"
 
 
 async def setup(bot: discord_commands.Bot) -> None:
+    await camera_service.discover_and_register_cameras()
     await camera_service.validate_cameras_on_startup()
 
     await bot.add_cog(SesamiCog(bot))

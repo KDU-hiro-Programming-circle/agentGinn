@@ -1,4 +1,5 @@
-"""Sesami Discord commands: /sesami status|camera|system|aircon|graph|history|alert on|off."""
+"""Sesami Discord commands: /sesami status|camera|system|aircon|graph|history|
+sensor add|remove|list|alert on|off."""
 
 from __future__ import annotations
 
@@ -15,6 +16,7 @@ from shared.logger import get_logger
 
 from . import camera as camera_service
 from . import models
+from . import sensors as sensor_service
 
 logger = get_logger(__name__)
 
@@ -25,21 +27,61 @@ class SesamiCog(commands.Cog):
 
     sesami_group = app_commands.Group(name="sesami", description="部室環境監視")
     alert_group = app_commands.Group(name="alert", description="アラート通知のON/OFF", parent=sesami_group)
+    sensor_group = app_commands.Group(name="sensor", description="SwitchBotセンサーの登録管理", parent=sesami_group)
+
+    async def _sensor_autocomplete(
+        self, interaction: discord.Interaction, current: str
+    ) -> list[app_commands.Choice[str]]:
+        return [
+            app_commands.Choice(name=f"{s.name} ({s.key})", value=s.key)
+            for s in sensor_service.list_sensors()
+            if current.lower() in s.name.lower() or current.lower() in s.key.lower()
+        ][:25]
 
     @sesami_group.command(name="status", description="現在の温湿度・CO2の最新値を表示")
+    @app_commands.describe(sensor="表示するセンサー（省略時は登録済み全センサー）")
     @permissions.require("sesami")
-    async def status(self, interaction: discord.Interaction) -> None:
-        sensor = await models.latest_sensor_log()
-        if sensor is None:
-            await interaction.response.send_message("まだデータがありません。")
+    async def status(self, interaction: discord.Interaction, sensor: str | None = None) -> None:
+        all_sensors = sensor_service.list_sensors()
+        if not all_sensors:
+            await interaction.response.send_message(
+                "登録されているセンサーがありません。`/sesami sensor add` で登録してください。"
+            )
             return
+
+        if sensor is not None:
+            target = sensor_service.resolve_sensor(sensor)
+            if target is None:
+                await interaction.response.send_message(f"センサー `{sensor}` が見つかりません。")
+                return
+            targets = [target]
+        else:
+            targets = all_sensors
+
+        latest_by_device = {row["device_id"]: row for row in await models.latest_sensor_log_all()}
+
         embed = discord.Embed(title="Sesami Status", color=discord.Color.blue())
-        embed.add_field(name="気温", value=f"{sensor['temperature_c']} ℃")
-        embed.add_field(name="湿度", value=f"{sensor['humidity_pct']} %")
-        embed.add_field(name="CO2", value=f"{sensor['co2_ppm']} ppm")
-        embed.add_field(name="バッテリー", value=f"{sensor['battery_pct']} %")
-        embed.set_footer(text=f"記録時刻: {sensor['recorded_at']}")
+        for target in targets:
+            row = latest_by_device.get(target.device_id)
+            if row is None:
+                embed.add_field(name=target.name, value="まだデータがありません。", inline=False)
+            else:
+                embed.add_field(
+                    name=target.name,
+                    value=(
+                        f"気温:{row['temperature_c']}℃ 湿度:{row['humidity_pct']}% "
+                        f"CO2:{row['co2_ppm']}ppm バッテリー:{row['battery_pct']}%\n"
+                        f"記録時刻: {row['recorded_at']}"
+                    ),
+                    inline=False,
+                )
         await interaction.response.send_message(embed=embed)
+
+    @status.autocomplete("sensor")
+    async def status_sensor_autocomplete(
+        self, interaction: discord.Interaction, current: str
+    ) -> list[app_commands.Choice[str]]:
+        return await self._sensor_autocomplete(interaction, current)
 
     @sesami_group.command(name="system", description="部室PCのシステム状態をリアルタイム表示")
     @permissions.require("sesami")
@@ -111,19 +153,109 @@ class SesamiCog(commands.Cog):
         )
 
     @sesami_group.command(name="history", description="直近の環境データ履歴を表示")
-    @app_commands.describe(count="表示件数（デフォルト10、最大25）")
+    @app_commands.describe(sensor="対象センサー（省略時は登録済み全センサーをまとめて表示）", count="表示件数（デフォルト10、最大25）")
     @permissions.require("sesami")
     async def history(
-        self, interaction: discord.Interaction, count: app_commands.Range[int, 1, 25] = 10
+        self,
+        interaction: discord.Interaction,
+        sensor: str | None = None,
+        count: app_commands.Range[int, 1, 25] = 10,
     ) -> None:
-        rows = await models.sensor_log_history(limit=count)
+        all_sensors = sensor_service.list_sensors()
+        if not all_sensors:
+            await interaction.response.send_message(
+                "登録されているセンサーがありません。`/sesami sensor add` で登録してください。"
+            )
+            return
+
+        if sensor is not None:
+            target = sensor_service.resolve_sensor(sensor)
+            if target is None:
+                await interaction.response.send_message(f"センサー `{sensor}` が見つかりません。")
+                return
+            name_by_device = {target.device_id: target.name}
+            rows = await models.sensor_log_history(device_id=target.device_id, limit=count)
+        else:
+            name_by_device = {s.device_id: s.name for s in all_sensors}
+            merged: list = []
+            for s in all_sensors:
+                merged.extend(await models.sensor_log_history(device_id=s.device_id, limit=count))
+            rows = sorted(merged, key=lambda row: row["recorded_at"])[-count:]
+
         if not rows:
             await interaction.response.send_message("まだデータがありません。")
             return
+
         lines = [
-            f"`{row['recorded_at']}` 気温:{row['temperature_c']}℃ 湿度:{row['humidity_pct']}%"
-            f" CO2:{row['co2_ppm']}ppm"
+            f"`{row['recorded_at']}` [{name_by_device.get(row['device_id'], row['device_id'])}]"
+            f" 気温:{row['temperature_c']}℃ 湿度:{row['humidity_pct']}% CO2:{row['co2_ppm']}ppm"
             for row in rows
+        ]
+        await interaction.response.send_message("\n".join(lines))
+
+    @history.autocomplete("sensor")
+    async def history_sensor_autocomplete(
+        self, interaction: discord.Interaction, current: str
+    ) -> list[app_commands.Choice[str]]:
+        return await self._sensor_autocomplete(interaction, current)
+
+    @sensor_group.command(name="add", description="SwitchBotセンサーを登録")
+    @app_commands.describe(
+        device_id="SwitchBotのデバイスID",
+        name="表示名（省略時は自動採番されたID）",
+        temperature_threshold="気温アラートの閾値 ℃（省略時28）",
+        co2_threshold="CO2アラートの閾値 ppm（省略時1000）",
+        cooldown_minutes="アラート再送クールダウン 分（省略時60）",
+    )
+    @permissions.require("sesami")
+    async def sensor_add(
+        self,
+        interaction: discord.Interaction,
+        device_id: str,
+        name: str | None = None,
+        temperature_threshold: float | None = None,
+        co2_threshold: float | None = None,
+        cooldown_minutes: app_commands.Range[int, 1, 1440] | None = None,
+    ) -> None:
+        key = config_store.add_sesami_sensor(
+            device_id,
+            name,
+            temperature_c=temperature_threshold,
+            co2_ppm=co2_threshold,
+            cooldown_minutes=cooldown_minutes,
+        )
+        await interaction.response.send_message(f"センサー `{key}` を登録しました。")
+
+    @sensor_group.command(name="remove", description="登録済みSwitchBotセンサーを削除")
+    @app_commands.describe(sensor="削除するセンサー")
+    @permissions.require("sesami")
+    async def sensor_remove(self, interaction: discord.Interaction, sensor: str) -> None:
+        target = sensor_service.resolve_sensor(sensor)
+        key = target.key if target is not None else sensor
+        try:
+            config_store.remove_sesami_sensor(key)
+        except KeyError:
+            await interaction.response.send_message(f"センサー `{sensor}` が見つかりません。")
+            return
+        await interaction.response.send_message(f"センサー `{key}` を削除しました。")
+
+    @sensor_remove.autocomplete("sensor")
+    async def sensor_remove_autocomplete(
+        self, interaction: discord.Interaction, current: str
+    ) -> list[app_commands.Choice[str]]:
+        return await self._sensor_autocomplete(interaction, current)
+
+    @sensor_group.command(name="list", description="登録済みSwitchBotセンサーの一覧を表示")
+    @permissions.require("sesami")
+    async def sensor_list(self, interaction: discord.Interaction) -> None:
+        all_sensors = sensor_service.list_sensors()
+        if not all_sensors:
+            await interaction.response.send_message("登録されているセンサーがありません。")
+            return
+        lines = [
+            f"`{s.key}` {s.name} (device_id: {s.device_id}) "
+            f"気温閾値:{s.temperature_c}℃ CO2閾値:{s.co2_ppm}ppm クールダウン:{s.cooldown_minutes}分"
+            for s in all_sensors
         ]
         await interaction.response.send_message("\n".join(lines))
 
