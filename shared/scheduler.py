@@ -20,10 +20,15 @@ _jobs_by_module: dict[str, set[str]] = {}
 
 
 def configure(timezone: str | None) -> None:
-    """Set the scheduler's timezone. Must be called before start()."""
-    global _scheduler
+    """Set the scheduler's timezone. Must be called before start().
+
+    Reconfigures the existing instance in place (rather than replacing
+    it) so jobs already registered via register_job() -- e.g. during
+    module setup, which can run before this is called -- aren't
+    silently dropped.
+    """
     if timezone:
-        _scheduler = AsyncIOScheduler(timezone=timezone)
+        _scheduler.configure(timezone=timezone)
 
 
 def start() -> None:
