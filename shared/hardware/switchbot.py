@@ -29,6 +29,7 @@ class SwitchBotError(Exception):
 
 class MeterClient(Protocol):
     async def get_meter(self, device_id: str) -> dict[str, float | None]: ...
+    async def list_devices(self) -> list[dict[str, Any]]: ...
 
 
 class SwitchBotClient:
@@ -72,6 +73,16 @@ class SwitchBotClient:
             "battery_pct": float(status["battery"]) if "battery" in status else None,
         }
 
+    async def list_devices(self) -> list[dict[str, Any]]:
+        url = f"{BASE_URL}/devices"
+        async with httpx.AsyncClient(timeout=self._timeout) as client:
+            resp = await client.get(url, headers=self._headers())
+        resp.raise_for_status()
+        body = resp.json()
+        if body.get("statusCode") != 100:
+            raise SwitchBotError(f"SwitchBot API error: {body}")
+        return body["body"].get("deviceList", [])
+
 
 class MockMeterClient:
     """Returned when SwitchBot credentials aren't configured (local dev)."""
@@ -79,6 +90,10 @@ class MockMeterClient:
     async def get_meter(self, device_id: str) -> dict[str, float | None]:
         logger.warning("SwitchBot credentials not configured; returning mock meter reading")
         return {"temperature_c": 25.0, "humidity_pct": 50.0, "co2_ppm": 600.0, "battery_pct": 100.0}
+
+    async def list_devices(self) -> list[dict[str, Any]]:
+        logger.warning("SwitchBot credentials not configured; skipping sensor auto-discovery")
+        return []
 
 
 def create_client(token: str, secret: str) -> MeterClient:

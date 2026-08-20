@@ -10,6 +10,7 @@ from shared.logger import get_logger
 
 from . import camera as camera_service
 from . import collector
+from . import sensors as sensor_service
 from .commands import SesamiCog
 from .dashboard.app import router as dashboard_router
 
@@ -19,6 +20,7 @@ MODULE_NAME = "sesami"
 
 
 async def setup(bot: discord_commands.Bot) -> None:
+    await sensor_service.discover_and_register_sensors(bot.settings.switchbot_token, bot.settings.switchbot_secret)
     await camera_service.discover_and_register_cameras()
     await camera_service.validate_cameras_on_startup()
 
