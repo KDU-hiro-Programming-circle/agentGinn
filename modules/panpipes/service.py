@@ -46,14 +46,11 @@ async def identify_from_image(image_bytes: bytes) -> tuple[str, isbn_lookup.Book
     return isbn, info
 
 
-async def register_from_lookup(
-    isbn: str, guild_id: str, info: isbn_lookup.BookInfo, registered_by: str
-) -> models.Book:
-    existing = await models.get_book_by_isbn(guild_id, isbn)
+async def register_from_lookup(isbn: str, info: isbn_lookup.BookInfo, registered_by: str) -> models.Book:
+    existing = await models.get_book_by_isbn(isbn)
     if existing is not None:
         return existing
     return await models.create_book(
-        guild_id,
         isbn=info.isbn,
         title=info.title,
         author=info.author,
@@ -64,14 +61,13 @@ async def register_from_lookup(
 
 
 async def register_manual(
-    guild_id: str, *, isbn: str | None, title: str, author: str | None, registered_by: str
+    *, isbn: str | None, title: str, author: str | None, registered_by: str
 ) -> models.Book:
     if isbn:
-        existing = await models.get_book_by_isbn(guild_id, isbn)
+        existing = await models.get_book_by_isbn(isbn)
         if existing is not None:
             return existing
     return await models.create_book(
-        guild_id,
         isbn=isbn,
         title=title,
         author=author,
@@ -92,8 +88,8 @@ async def borrow_book(book: models.Book, borrower_id: str) -> models.Borrow:
     return await models.create_borrow(book.id, borrower_id, due_date.isoformat())
 
 
-async def borrow_by_isbn(isbn: str, guild_id: str, borrower_id: str) -> models.Borrow:
-    book = await models.get_book_by_isbn(guild_id, isbn)
+async def borrow_by_isbn(isbn: str, borrower_id: str) -> models.Borrow:
+    book = await models.get_book_by_isbn(isbn)
     if book is None:
         raise PanpipesError("この本はまだ登録されていません。先に「新規登録」を行ってください。")
     return await borrow_book(book, borrower_id)
@@ -107,21 +103,20 @@ async def return_book(book: models.Book, actor_id: str) -> models.Borrow:
     return borrow
 
 
-async def return_by_isbn(isbn: str, guild_id: str, actor_id: str) -> models.Borrow:
-    book = await models.get_book_by_isbn(guild_id, isbn)
+async def return_by_isbn(isbn: str, actor_id: str) -> models.Borrow:
+    book = await models.get_book_by_isbn(isbn)
     if book is None:
         raise PanpipesError("この本はまだ登録されていません。")
     return await return_book(book, actor_id)
 
 
-async def check_overdue(guild_id: str) -> list[tuple[models.Borrow, models.Book]]:
-    """Called daily by the scheduler, once per guild. Returns newly-overdue
-    borrows (not yet mentioned) paired with their book, and marks them
-    notified."""
-    pending = await models.unnotified_overdue_borrows(guild_id, today_iso())
+async def check_overdue() -> list[tuple[models.Borrow, models.Book]]:
+    """Called daily by the scheduler. Returns newly-overdue borrows (not yet
+    mentioned) paired with their book, and marks them notified."""
+    pending = await models.unnotified_overdue_borrows(today_iso())
     results: list[tuple[models.Borrow, models.Book]] = []
     for borrow in pending:
-        book = await models.get_book(borrow.book_id, guild_id)
+        book = await models.get_book(borrow.book_id)
         if book is None:
             continue
         results.append((borrow, book))

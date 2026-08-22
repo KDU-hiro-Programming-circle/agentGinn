@@ -22,6 +22,13 @@ from . import sensors as sensor_service
 logger = get_logger(__name__)
 
 
+def _range_summary(rows: list[dict], key: str, unit: str) -> str:
+    values = [row[key] for row in rows if row[key] is not None]
+    if not values:
+        return "データなし"
+    return f"{min(values):.1f}〜{max(values):.1f}{unit}（平均{sum(values) / len(values):.1f}{unit}）"
+
+
 class SesamiCog(commands.Cog):
     def __init__(self, bot: commands.Bot) -> None:
         self.bot = bot
@@ -75,10 +82,10 @@ class SesamiCog(commands.Cog):
             lines.append(
                 f"""
             **{target.name}** 
-{"温度":^10}:{meter['temperature_c']}℃
-{"湿度":^10}:{meter['humidity_pct']}%
-{"CO2濃度":^10}:{meter['co2_ppm']}ppm 
-{"電池残量":^10}:{meter['battery_pct']}%
+🌡️{"温度":^15}:{meter['temperature_c']}℃
+💧{"湿度":^15}:{meter['humidity_pct']}%
+😮‍💨{"CO2濃度":<15}:{meter['co2_ppm']}ppm 
+🔋{"電池残量":<15}:{meter['battery_pct']}%
                 """
             )
         await interaction.followup.send("\n".join(lines))
@@ -145,18 +152,43 @@ class SesamiCog(commands.Cog):
     async def aircon(self, interaction: discord.Interaction) -> None:
         await interaction.response.send_message("エアコン自動制御は将来実装予定の機能です。")
 
-    @sesami_group.command(name="graph", description="ダッシュボードの案内を表示")
+    @sesami_group.command(name="graph", description="ダッシュボードの案内とDiscord上での概要を表示")
+    @app_commands.describe(count="概要に使う直近データ件数（デフォルト10、最大25）")
     @permissions.require("sesami")
-    async def graph(self, interaction: discord.Interaction) -> None:
+    async def graph(
+        self, interaction: discord.Interaction, count: app_commands.Range[int, 1, 25] = 10
+    ) -> None:
         dashboard_cfg = config_store.load("sesami")["dashboard"]
-        if not dashboard_cfg.get("enabled"):
-            await interaction.response.send_message("ダッシュボードは無効化されています。")
-            return
-        port = dashboard_cfg.get("port", 8420)
-        await interaction.response.send_message(
-            f"ダッシュボードは部室のディスプレイから http://127.0.0.1:{port}/sesami/ で確認できます"
-            "（ループバック限定で外部からはアクセスできません）。"
-        )
+        lines = []
+        if dashboard_cfg.get("enabled"):
+            port = dashboard_cfg.get("port", 8420)
+            lines.append(
+                f"ダッシュボードは部室のディスプレイから http://127.0.0.1:{port}/sesami/ で確認できます"
+                "（ループバック限定で外部からはアクセスできません）。"
+            )
+        else:
+            lines.append("ダッシュボードは無効化されています。")
+
+        all_sensors = sensor_service.list_sensors()
+        if all_sensors:
+            lines.append(f"\n**環境データ概要（直近{count}件）**")
+            for target in all_sensors:
+                rows = await models.sensor_log_history(device_id=target.device_id, limit=count)
+                if not rows:
+                    lines.append(f"**{target.name}**: まだデータがありません。")
+                    continue
+                lines.append(
+                    f"**{target.name}**: "
+                    f"気温 {_range_summary(rows, 'temperature_c', '℃')} / "
+                    f"湿度 {_range_summary(rows, 'humidity_pct', '%')} / "
+                    f"CO2 {_range_summary(rows, 'co2_ppm', 'ppm')}"
+                )
+
+        system_rows = await models.system_log_history(limit=count)
+        if system_rows:
+            lines.append(f"**部室PC**: CPU温度 {_range_summary(system_rows, 'cpu_temperature_c', '℃')}")
+
+        await interaction.response.send_message("\n".join(lines))
 
     @sesami_group.command(name="history", description="直近の環境データ履歴を表示")
     @app_commands.describe(sensor="対象センサー（省略時は登録済み全センサーをまとめて表示）", count="表示件数（デフォルト10、最大25）")

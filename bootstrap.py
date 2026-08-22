@@ -49,7 +49,7 @@ DEFAULT_CONFIGS: dict[str, dict] = {
         },
         "dashboard": {"enabled": True, "port": 8420},
     },
-    "panpipes": {"library_channel_id": {}, "borrow_days": 14, "overdue_check_hour": 9},
+    "panpipes": {"library_channel_id": 0, "borrow_days": 14, "overdue_check_hour": 9},
     "abacus": {"enabled": False},
     "khartes": {"enabled": False},
 }
