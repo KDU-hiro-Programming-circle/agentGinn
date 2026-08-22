@@ -73,8 +73,13 @@ class SesamiCog(commands.Cog):
                 lines.append(f"**{target.name}**: 取得に失敗しました。")
                 continue
             lines.append(
-                f"**{target.name}**: 気温:{meter['temperature_c']}℃ 湿度:{meter['humidity_pct']}% "
-                f"CO2:{meter['co2_ppm']}ppm バッテリー:{meter['battery_pct']}%"
+                f"""
+                **{target.name}** 
+                temperature:{meter['temperature_c']}℃
+                humidity:{meter['humidity_pct']}%
+                CO2 ppm:{meter['co2_ppm']}ppm 
+                Battery:{meter['battery_pct']}%
+                """
             )
         await interaction.followup.send("\n".join(lines))
 
