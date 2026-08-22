@@ -11,6 +11,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
+import jinja2
 from fastapi import APIRouter, Request
 from fastapi.responses import FileResponse, HTMLResponse
 from fastapi.templating import Jinja2Templates
@@ -19,14 +20,25 @@ from ..models import latest_sensor_log, latest_system_log, sensor_log_history, s
 
 DASHBOARD_DIR = Path(__file__).resolve().parent
 STATIC_DIR = DASHBOARD_DIR / "static"
-templates = Jinja2Templates(directory=str(DASHBOARD_DIR / "templates"))
+# Built manually (rather than Jinja2Templates(directory=...)) so cache_size=0
+# can be set: on some Jinja2/Python version combinations (seen on Python
+# 3.14) the template LRUCache's cache-key hashing raises `TypeError: cannot
+# use 'tuple' as a dict key (unhashable type: 'dict')`. The dashboard has
+# one template and is loopback-only/low-traffic, so skipping the cache
+# entirely has no meaningful cost.
+_jinja_env = jinja2.Environment(
+    loader=jinja2.FileSystemLoader(str(DASHBOARD_DIR / "templates")),
+    autoescape=jinja2.select_autoescape(),
+    cache_size=0,
+)
+templates = Jinja2Templates(env=_jinja_env)
 
 router = APIRouter()
 
 
 @router.get("/", response_class=HTMLResponse)
 async def index(request: Request) -> HTMLResponse:
-    return templates.TemplateResponse("index.html", {"request": request})
+    return templates.TemplateResponse(request, "index.html")
 
 
 @router.get("/static/style.css")
