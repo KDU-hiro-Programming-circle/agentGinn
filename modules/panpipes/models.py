@@ -14,6 +14,7 @@ from shared.utils import utcnow_iso
 @dataclass
 class Book:
     id: int
+    guild_id: str
     isbn: str | None
     title: str
     author: str | None
@@ -37,6 +38,7 @@ class Borrow:
 def _book_from_row(row: aiosqlite.Row) -> Book:
     return Book(
         id=row["id"],
+        guild_id=row["guild_id"],
         isbn=row["isbn"],
         title=row["title"],
         author=row["author"],
@@ -69,36 +71,41 @@ async def _add_history(conn: aiosqlite.Connection, book_id: int, event_type: str
 # ---- Books ------------------------------------------------------------
 
 
-async def get_book_by_isbn(isbn: str) -> Book | None:
+async def get_book_by_isbn(guild_id: str, isbn: str) -> Book | None:
     async with database.connect() as conn:
-        cur = await conn.execute("SELECT * FROM panpipes_books WHERE isbn = ?", (isbn,))
+        cur = await conn.execute(
+            "SELECT * FROM panpipes_books WHERE guild_id = ? AND isbn = ?", (guild_id, isbn)
+        )
         row = await cur.fetchone()
         return _book_from_row(row) if row else None
 
 
-async def get_book(book_id: int) -> Book | None:
+async def get_book(book_id: int, guild_id: str) -> Book | None:
     async with database.connect() as conn:
-        cur = await conn.execute("SELECT * FROM panpipes_books WHERE id = ?", (book_id,))
+        cur = await conn.execute(
+            "SELECT * FROM panpipes_books WHERE id = ? AND guild_id = ?", (book_id, guild_id)
+        )
         row = await cur.fetchone()
         return _book_from_row(row) if row else None
 
 
-async def search_books(query: str, limit: int = 10) -> list[Book]:
+async def search_books(guild_id: str, query: str, limit: int = 10) -> list[Book]:
     like = f"%{query}%"
     async with database.connect() as conn:
         cur = await conn.execute(
             """
             SELECT * FROM panpipes_books
-            WHERE title LIKE ? OR author LIKE ? OR isbn = ?
+            WHERE guild_id = ? AND (title LIKE ? OR author LIKE ? OR isbn = ?)
             ORDER BY title LIMIT ?
             """,
-            (like, like, query, limit),
+            (guild_id, like, like, query, limit),
         )
         rows = await cur.fetchall()
         return [_book_from_row(row) for row in rows]
 
 
 async def create_book(
+    guild_id: str,
     *,
     isbn: str | None,
     title: str,
@@ -110,10 +117,11 @@ async def create_book(
     async with database.connect() as conn:
         cur = await conn.execute(
             """
-            INSERT INTO panpipes_books (isbn, title, author, publisher, thumbnail_url, registered_by, created_at)
-            VALUES (?, ?, ?, ?, ?, ?, ?)
+            INSERT INTO panpipes_books
+                (guild_id, isbn, title, author, publisher, thumbnail_url, registered_by, created_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
             """,
-            (isbn, title, author, publisher, thumbnail_url, registered_by, utcnow_iso()),
+            (guild_id, isbn, title, author, publisher, thumbnail_url, registered_by, utcnow_iso()),
         )
         book_id = cur.lastrowid
         await _add_history(conn, book_id, "register", registered_by)
@@ -167,23 +175,40 @@ async def book_history(book_id: int, limit: int = 20) -> list[dict[str, Any]]:
         return [dict(row) for row in rows]
 
 
-async def list_overdue(now_iso: str) -> list[Borrow]:
-    """All currently-overdue open borrows, regardless of notification state."""
+async def list_overdue(guild_id: str, today_iso: str) -> list[Borrow]:
+    """All currently-overdue open borrows for a guild, regardless of
+    notification state. today_iso is a YYYY-MM-DD date (not a timestamp) --
+    due dates are compared by calendar day only, so a book isn't overdue
+    until the day after its due date."""
     async with database.connect() as conn:
         cur = await conn.execute(
-            "SELECT * FROM panpipes_borrow WHERE returned_at IS NULL AND due_at < ?",
-            (now_iso,),
+            """
+            SELECT panpipes_borrow.* FROM panpipes_borrow
+            JOIN panpipes_books ON panpipes_books.id = panpipes_borrow.book_id
+            WHERE panpipes_borrow.returned_at IS NULL
+                AND panpipes_borrow.due_at < ?
+                AND panpipes_books.guild_id = ?
+            """,
+            (today_iso, guild_id),
         )
         rows = await cur.fetchall()
         return [_borrow_from_row(row) for row in rows]
 
 
-async def unnotified_overdue_borrows(now_iso: str) -> list[Borrow]:
-    """Overdue open borrows not yet mentioned by the scheduler's overdue check."""
+async def unnotified_overdue_borrows(guild_id: str, today_iso: str) -> list[Borrow]:
+    """Overdue open borrows for a guild not yet mentioned by the scheduler's
+    overdue check. today_iso is a YYYY-MM-DD date, compared by calendar day."""
     async with database.connect() as conn:
         cur = await conn.execute(
-            "SELECT * FROM panpipes_borrow WHERE returned_at IS NULL AND due_at < ? AND overdue_notified = 0",
-            (now_iso,),
+            """
+            SELECT panpipes_borrow.* FROM panpipes_borrow
+            JOIN panpipes_books ON panpipes_books.id = panpipes_borrow.book_id
+            WHERE panpipes_borrow.returned_at IS NULL
+                AND panpipes_borrow.due_at < ?
+                AND panpipes_borrow.overdue_notified = 0
+                AND panpipes_books.guild_id = ?
+            """,
+            (today_iso, guild_id),
         )
         rows = await cur.fetchall()
         return [_borrow_from_row(row) for row in rows]

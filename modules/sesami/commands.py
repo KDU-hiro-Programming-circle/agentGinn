@@ -11,6 +11,7 @@ from discord.ext import commands
 
 from shared import permissions
 from shared.config import config as config_store
+from shared.hardware import switchbot
 from shared.hardware import system as hw_system
 from shared.logger import get_logger
 
@@ -38,7 +39,7 @@ class SesamiCog(commands.Cog):
             if current.lower() in s.name.lower() or current.lower() in s.key.lower()
         ][:25]
 
-    @sesami_group.command(name="status", description="現在の温湿度・CO2の最新値を表示")
+    @sesami_group.command(name="status", description="SwitchBotから現在の温湿度・CO2をその場で取得して表示")
     @app_commands.describe(sensor="表示するセンサー（省略時は登録済み全センサー）")
     @permissions.require("sesami")
     async def status(self, interaction: discord.Interaction, sensor: str | None = None) -> None:
@@ -58,24 +59,24 @@ class SesamiCog(commands.Cog):
         else:
             targets = all_sensors
 
-        latest_by_device = {row["device_id"]: row for row in await models.latest_sensor_log_all()}
+        # Reads SwitchBot live, at command time -- independent of the 10-
+        # minute collector job and not written to sesami_sensor_log.
+        await interaction.response.defer(thinking=True)
+        client = switchbot.create_client(self.bot.settings.switchbot_token, self.bot.settings.switchbot_secret)
 
-        embed = discord.Embed(title="Sesami Status", color=discord.Color.blue())
+        lines = []
         for target in targets:
-            row = latest_by_device.get(target.device_id)
-            if row is None:
-                embed.add_field(name=target.name, value="まだデータがありません。", inline=False)
-            else:
-                embed.add_field(
-                    name=target.name,
-                    value=(
-                        f"気温:{row['temperature_c']}℃ 湿度:{row['humidity_pct']}% "
-                        f"CO2:{row['co2_ppm']}ppm バッテリー:{row['battery_pct']}%\n"
-                        f"記録時刻: {row['recorded_at']}"
-                    ),
-                    inline=False,
-                )
-        await interaction.response.send_message(embed=embed)
+            try:
+                meter = await client.get_meter(target.device_id)
+            except Exception:
+                logger.exception("sesami status: failed to read SwitchBot meter for %s", target.key)
+                lines.append(f"**{target.name}**: 取得に失敗しました。")
+                continue
+            lines.append(
+                f"**{target.name}**: 気温:{meter['temperature_c']}℃ 湿度:{meter['humidity_pct']}% "
+                f"CO2:{meter['co2_ppm']}ppm バッテリー:{meter['battery_pct']}%"
+            )
+        await interaction.followup.send("\n".join(lines))
 
     @status.autocomplete("sensor")
     async def status_sensor_autocomplete(

@@ -78,16 +78,22 @@ STATEMENTS: list[str] = [
     )
     """,
     # ---- Panpipes -----------------------------------------------------
+    # Book data is scoped per Discord guild (server); the same ISBN can be
+    # registered independently by different guilds, so uniqueness is on
+    # (guild_id, isbn) rather than isbn alone. panpipes_borrow/_history
+    # aren't guild-scoped directly -- they inherit it via book_id.
     """
     CREATE TABLE IF NOT EXISTS panpipes_books (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
-        isbn TEXT UNIQUE,
+        guild_id TEXT NOT NULL,
+        isbn TEXT,
         title TEXT NOT NULL,
         author TEXT,
         publisher TEXT,
         thumbnail_url TEXT,
         registered_by TEXT NOT NULL,
-        created_at TEXT NOT NULL
+        created_at TEXT NOT NULL,
+        UNIQUE (guild_id, isbn)
     )
     """,
     """

@@ -70,22 +70,6 @@ async def latest_sensor_log(device_id: str | None = None) -> dict[str, Any] | No
         return dict(row) if row else None
 
 
-async def latest_sensor_log_all() -> list[dict[str, Any]]:
-    """Latest reading per device_id, most recently updated device first."""
-    async with database.connect() as conn:
-        cur = await conn.execute(
-            """
-            SELECT s1.* FROM sesami_sensor_log s1
-            INNER JOIN (
-                SELECT device_id, MAX(id) AS max_id FROM sesami_sensor_log GROUP BY device_id
-            ) s2 ON s1.device_id = s2.device_id AND s1.id = s2.max_id
-            ORDER BY s1.recorded_at DESC
-            """
-        )
-        rows = await cur.fetchall()
-        return [dict(row) for row in rows]
-
-
 async def latest_system_log() -> dict[str, Any] | None:
     async with database.connect() as conn:
         cur = await conn.execute("SELECT * FROM sesami_system_log ORDER BY id DESC LIMIT 1")
