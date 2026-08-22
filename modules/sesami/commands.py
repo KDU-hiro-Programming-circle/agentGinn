@@ -82,9 +82,9 @@ class SesamiCog(commands.Cog):
             lines.append(
                 f"""
             **{target.name}** 
-🌡️{"温度":^15}:{meter['temperature_c']}℃
+🌡{"温度":^15}:{meter['temperature_c']}℃
 💧{"湿度":^15}:{meter['humidity_pct']}%
-😮‍💨{"CO2濃度":<15}:{meter['co2_ppm']}ppm 
+🫁{"CO2濃度":<15}:{meter['co2_ppm']}ppm 
 🔋{"電池残量":<15}:{meter['battery_pct']}%
                 """
             )
