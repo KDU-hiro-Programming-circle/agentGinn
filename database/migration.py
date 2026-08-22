@@ -26,12 +26,17 @@ async def _drop_legacy_panpipes_books(conn) -> None:
     """One-time migration: panpipes_books gained a guild_id column and its
     ISBN uniqueness constraint moved from global to per-guild (SQLite
     requires recreating the table to change a UNIQUE constraint). Confirmed
-    empty in practice at migration time; panpipes_borrow/panpipes_history
-    are untouched since their schema didn't change.
+    empty in practice at migration time. panpipes_borrow/panpipes_history
+    reference panpipes_books via foreign key, and with PRAGMA foreign_keys
+    = ON, DROP TABLE does an implicit delete-check against child rows -- so
+    any leftover borrow/history rows must be cleared first or the DROP
+    itself fails with a FOREIGN KEY constraint error.
     """
     cur = await conn.execute("PRAGMA table_info(panpipes_books)")
     columns = {row["name"] async for row in cur}
     if columns and "guild_id" not in columns:
+        await conn.execute("DELETE FROM panpipes_history")
+        await conn.execute("DELETE FROM panpipes_borrow")
         await conn.execute("DROP TABLE panpipes_books")
 
 
