@@ -75,10 +75,10 @@ class SesamiCog(commands.Cog):
             lines.append(
                 f"""
                 **{target.name}** 
-                temperature:{meter['temperature_c']}℃
-                humidity:{meter['humidity_pct']}%
-                CO2 ppm:{meter['co2_ppm']}ppm 
-                Battery:{meter['battery_pct']}%
+                \ntemperature:{meter['temperature_c']}℃
+                \nhumidity:{meter['humidity_pct']}%
+                \nCO2 ppm:{meter['co2_ppm']}ppm 
+                \nBattery:{meter['battery_pct']}%
                 """
             )
         await interaction.followup.send("\n".join(lines))
