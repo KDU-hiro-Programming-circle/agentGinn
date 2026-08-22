@@ -16,6 +16,7 @@ from fastapi import APIRouter, Request
 from fastapi.responses import FileResponse, HTMLResponse
 from fastapi.templating import Jinja2Templates
 
+from .. import sensors as sensor_service
 from ..models import latest_sensor_log, latest_system_log, sensor_log_history, system_log_history
 
 DASHBOARD_DIR = Path(__file__).resolve().parent
@@ -56,14 +57,23 @@ async def static_chartjs() -> FileResponse:
     return FileResponse(STATIC_DIR / "chart.min.js", media_type="application/javascript")
 
 
+@router.get("/api/sensors")
+async def api_sensors() -> list[dict]:
+    """Registered sensors, so the dashboard can render one section per
+    sensor -- sensor count isn't fixed, it grows as more are registered."""
+    return [{"key": s.key, "name": s.name} for s in sensor_service.list_sensors()]
+
+
 @router.get("/api/latest")
 async def api_latest() -> dict:
-    return {"sensor": await latest_sensor_log(), "system": await latest_system_log()}
+    sensors = {s.key: await latest_sensor_log(device_id=s.device_id) for s in sensor_service.list_sensors()}
+    return {"sensors": sensors, "system": await latest_system_log()}
 
 
 @router.get("/api/history")
 async def api_history(limit: int = 144) -> dict:
-    return {
-        "sensor": await sensor_log_history(limit=limit),
-        "system": await system_log_history(limit=limit),
+    sensors = {
+        s.key: await sensor_log_history(device_id=s.device_id, limit=limit)
+        for s in sensor_service.list_sensors()
     }
+    return {"sensors": sensors, "system": await system_log_history(limit=limit)}

@@ -67,6 +67,12 @@ header h1 {
   color: var(--accent);
 }
 
+.stat-sub {
+  margin: 4px 0 0;
+  font-size: 0.85rem;
+  color: var(--muted);
+}
+
 .chart-grid {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
