@@ -9,9 +9,13 @@ same device concurrently.
 from __future__ import annotations
 
 import asyncio
+import time
 from pathlib import Path
+from typing import Any
 
 _locks: dict[str, asyncio.Lock] = {}
+_OPEN_RETRIES = 3
+_OPEN_RETRY_DELAY_S = 1.0
 
 
 class CameraCaptureError(Exception):
@@ -47,22 +51,41 @@ def _get_lock(device_path: str) -> asyncio.Lock:
     return lock
 
 
+def _open_and_read(device_path: str, cv2: Any) -> tuple[bool, Any]:
+    # Explicit CAP_V4L2 avoids OpenCV probing other backends (seen falling
+    # through to its image-file loader, which obviously can't read a V4L2
+    # device node) when a by-id symlink isn't immediately recognized.
+    cap = cv2.VideoCapture(device_path, cv2.CAP_V4L2)
+    try:
+        if not cap.isOpened():
+            return False, None
+        return cap.read()
+    finally:
+        cap.release()
+
+
 def _capture_jpeg_sync(device_path: str) -> bytes:
     import cv2  # lazy import: opencv isn't required unless a camera is used
 
-    cap = cv2.VideoCapture(device_path)
-    try:
-        if not cap.isOpened():
-            raise CameraCaptureError(f"could not open camera device: {device_path}")
-        ok, frame = cap.read()
-        if not ok:
-            raise CameraCaptureError(f"could not read frame from camera device: {device_path}")
-        ok, buf = cv2.imencode(".jpg", frame)
-        if not ok:
-            raise CameraCaptureError("failed to encode captured frame as JPEG")
-        return buf.tobytes()
-    finally:
-        cap.release()
+    # A freshly (re)plugged/booted USB webcam can take a moment before it's
+    # actually ready to open/stream, so a transient failure is retried
+    # rather than treated as a hard error on the first attempt.
+    ok = False
+    frame = None
+    for attempt in range(1, _OPEN_RETRIES + 1):
+        ok, frame = _open_and_read(device_path, cv2)
+        if ok:
+            break
+        if attempt < _OPEN_RETRIES:
+            time.sleep(_OPEN_RETRY_DELAY_S)
+
+    if not ok or frame is None:
+        raise CameraCaptureError(f"could not open/read camera device: {device_path}")
+
+    ok, buf = cv2.imencode(".jpg", frame)
+    if not ok:
+        raise CameraCaptureError("failed to encode captured frame as JPEG")
+    return buf.tobytes()
 
 
 async def capture_jpeg(device_path: str) -> bytes:
