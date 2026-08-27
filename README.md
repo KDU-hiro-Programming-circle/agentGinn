@@ -15,6 +15,9 @@ Fill in `DISCORD_TOKEN` / `SWITCHBOT_TOKEN` / `SWITCHBOT_SECRET` in `.env`, then
 .venv/Scripts/python bot.py
 ```
 
+On Linux/macOS, `./run.sh` does all of the above in one shot (creates `venv/` and installs
+requirements if missing, runs `bootstrap.py`, then starts the bot).
+
 Sesami's dashboard (loopback only) is at `http://127.0.0.1:8420/sesami/` once the bot is running,
 port configurable in `config/sesami.json`.
 
