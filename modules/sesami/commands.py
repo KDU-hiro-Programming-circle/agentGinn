@@ -1,5 +1,5 @@
-"""Sesami Discord commands: /sesami status|camera|system|aircon|graph|history|
-sensor add|remove|list|alert on|off."""
+"""Sesami Discord commands: /sesami status|camera|tomocore|system|aircon|
+graph|history|sensor add|remove|list|alert on|off."""
 
 from __future__ import annotations
 
@@ -18,6 +18,7 @@ from shared.logger import get_logger
 from . import camera as camera_service
 from . import models
 from . import sensors as sensor_service
+from . import tomocore as tomocore_service
 
 logger = get_logger(__name__)
 
@@ -108,23 +109,27 @@ class SesamiCog(commands.Cog):
         embed.add_field(name="ディスク使用率", value=f"{stats['disk_usage_pct']} %")
         await interaction.response.send_message(embed=embed)
 
+    async def _resolve_camera(self, camera: str | None) -> tuple[models.Camera | None, str | None]:
+        """Returns (camera, None) on success, or (None, error_message)."""
+        cameras = await camera_service.list_enabled_cameras()
+        if not cameras:
+            return None, "カメラが登録されていません。"
+        if camera is None:
+            return cameras[0], None
+        matched = next((c for c in cameras if c.display_name == camera or c.uuid == camera), None)
+        if matched is None:
+            return None, f"カメラ `{camera}` が見つかりません。"
+        return matched, None
+
     @sesami_group.command(name="camera", description="部室のカメラで撮影して送信")
     @app_commands.describe(camera="カメラ名（省略時は先頭のカメラ）")
     @permissions.require("sesami")
     async def camera_command(self, interaction: discord.Interaction, camera: str | None = None) -> None:
         await interaction.response.defer(thinking=True)
-        cameras = await camera_service.list_enabled_cameras()
-        if not cameras:
-            await interaction.followup.send("カメラが登録されていません。")
+        target, error = await self._resolve_camera(camera)
+        if target is None:
+            await interaction.followup.send(error)
             return
-
-        target = cameras[0]
-        if camera is not None:
-            matched = next((c for c in cameras if c.display_name == camera or c.uuid == camera), None)
-            if matched is None:
-                await interaction.followup.send(f"カメラ `{camera}` が見つかりません。")
-                return
-            target = matched
 
         try:
             jpeg_bytes = await camera_service.capture(target)
@@ -136,7 +141,38 @@ class SesamiCog(commands.Cog):
         file = discord.File(io.BytesIO(jpeg_bytes), filename="camera.jpg")
         await interaction.followup.send(content=f"\U0001f4f7 {target.display_name}", file=file)
 
+    @sesami_group.command(name="tomocore", description="カメラ画像に名札フレームと在室人数の推定を合成して送信")
+    @app_commands.describe(camera="カメラ名（省略時は先頭のカメラ）")
+    @permissions.require("sesami")
+    async def tomocore(self, interaction: discord.Interaction, camera: str | None = None) -> None:
+        await interaction.response.defer(thinking=True)
+        target, error = await self._resolve_camera(camera)
+        if target is None:
+            await interaction.followup.send(error)
+            return
+
+        try:
+            jpeg_bytes = await camera_service.capture(target)
+        except Exception:
+            logger.exception("sesami tomocore capture failed: %s", target.uuid)
+            await interaction.followup.send(f"カメラ `{target.display_name}` の撮影に失敗しました。")
+            return
+
+        try:
+            composed = await tomocore_service.compose(jpeg_bytes, target.display_name)
+        except tomocore_service.TomocoreError as exc:
+            await interaction.followup.send(str(exc))
+            return
+        except Exception:
+            logger.exception("sesami tomocore compose failed: %s", target.uuid)
+            await interaction.followup.send("画像の合成に失敗しました。")
+            return
+
+        file = discord.File(io.BytesIO(composed), filename="tomocore.jpg")
+        await interaction.followup.send(content=f"\U0001f5bc️ {target.display_name}", file=file)
+
     @camera_command.autocomplete("camera")
+    @tomocore.autocomplete("camera")
     async def camera_autocomplete(
         self, interaction: discord.Interaction, current: str
     ) -> list[app_commands.Choice[str]]:
