@@ -9,6 +9,7 @@ same device concurrently.
 from __future__ import annotations
 
 import asyncio
+import re
 import time
 from pathlib import Path
 from typing import Any
@@ -16,6 +17,7 @@ from typing import Any
 _locks: dict[str, asyncio.Lock] = {}
 _OPEN_RETRIES = 3
 _OPEN_RETRY_DELAY_S = 1.0
+_VIDEO_NODE_RE = re.compile(r"^video(\d+)$")
 
 
 class CameraCaptureError(Exception):
@@ -51,11 +53,23 @@ def _get_lock(device_path: str) -> asyncio.Lock:
     return lock
 
 
+def _video_index(device_path: str) -> int | None:
+    """Resolve a /dev/v4l/by-id/... symlink (or a direct /dev/videoN path)
+    to its videoN index. opencv-python's V4L2 backend can fail to "capture
+    by name" (open by string path) at all on some builds -- WARN VIDEOIO(
+    V4L2): backend is generally available but can't be used to capture by
+    name -- so callers should prefer opening by this integer index instead.
+    """
+    match = _VIDEO_NODE_RE.match(Path(device_path).resolve().name)
+    return int(match.group(1)) if match else None
+
+
 def _open_and_read(device_path: str, cv2: Any) -> tuple[bool, Any]:
     # Explicit CAP_V4L2 avoids OpenCV probing other backends (seen falling
     # through to its image-file loader, which obviously can't read a V4L2
     # device node) when a by-id symlink isn't immediately recognized.
-    cap = cv2.VideoCapture(device_path, cv2.CAP_V4L2)
+    index = _video_index(device_path)
+    cap = cv2.VideoCapture(index, cv2.CAP_V4L2) if index is not None else cv2.VideoCapture(device_path, cv2.CAP_V4L2)
     try:
         if not cap.isOpened():
             return False, None
