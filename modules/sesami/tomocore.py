@@ -48,7 +48,16 @@ class TomocoreError(Exception):
 def _load_font(size: int) -> ImageFont.FreeTypeFont:
     for path in _FONT_CANDIDATES:
         if Path(path).exists():
-            return ImageFont.truetype(path, size)
+            try:
+                return ImageFont.truetype(path, size)
+            except ImportError as exc:
+                # Pillow built/installed without FreeType support: the
+                # _imagingft C extension is simply missing, not a bad font
+                # file. A generic "compose failed" wouldn't point at the fix.
+                raise TomocoreError(
+                    "PillowがFreeTypeサポート無しでインストールされています。"
+                    "`pip install --force-reinstall --no-cache-dir pillow` を実行してください。"
+                ) from exc
     raise TomocoreError(
         "日本語フォントが見つかりません。`sudo apt install fonts-noto-cjk` 等でインストールしてください。"
     )
