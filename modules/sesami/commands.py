@@ -82,10 +82,10 @@ class SesamiCog(commands.Cog):
             lines.append(
                 f"""
             **{target.name}** 
-🌡{"温度":^15}:{meter['temperature_c']}℃
-💧{"湿度":^15}:{meter['humidity_pct']}%
-🫁{"CO2濃度":<15}:{meter['co2_ppm']}ppm 
-🔋{"電池残量":<15}:{meter['battery_pct']}%
+:thermometer:{"温度":^10}:{meter['temperature_c']}℃
+:droplet:{"湿度":^10}:{meter['humidity_pct']}%
+:lungs:{"CO2濃度":^10}:{meter['co2_ppm']}ppm 
+:battery:{"電池残量":^10}:{meter['battery_pct']}%
                 """
             )
         await interaction.followup.send("\n".join(lines))
