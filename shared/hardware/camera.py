@@ -1,23 +1,31 @@
-"""USB camera capture. The only place that touches cv2/VideoCapture.
+"""USB camera capture. The only place that shells out to ffmpeg for a frame.
 
 Frames are returned as JPEG bytes and never written to disk -- callers
 (Sesami) send them to Discord and discard them. A per-device-path lock
 prevents the Collector and a `/sesami camera` command from opening the
 same device concurrently.
+
+Capture goes through the `ffmpeg` binary (its v4l2 input demuxer) rather
+than cv2.VideoCapture: opencv-python-headless wheels have been observed
+with a V4L2 backend that's registered as available but can't actually
+open a device by name OR by index ("VIDEOIO(V4L2): backend is generally
+available but can't be used to capture by name/index"), making it
+unusable here. ffmpeg's v4l2 support is much more mature and doesn't
+depend on how the OpenCV wheel happened to be built. Requires the
+`ffmpeg` package to be installed on the host (`sudo apt install ffmpeg`).
 """
 
 from __future__ import annotations
 
 import asyncio
-import re
+import subprocess
 import time
 from pathlib import Path
-from typing import Any
 
 _locks: dict[str, asyncio.Lock] = {}
 _OPEN_RETRIES = 3
 _OPEN_RETRY_DELAY_S = 1.0
-_VIDEO_NODE_RE = re.compile(r"^video(\d+)$")
+_CAPTURE_TIMEOUT_S = 10.0
 
 
 class CameraCaptureError(Exception):
@@ -53,53 +61,43 @@ def _get_lock(device_path: str) -> asyncio.Lock:
     return lock
 
 
-def _video_index(device_path: str) -> int | None:
-    """Resolve a /dev/v4l/by-id/... symlink (or a direct /dev/videoN path)
-    to its videoN index. opencv-python's V4L2 backend can fail to "capture
-    by name" (open by string path) at all on some builds -- WARN VIDEOIO(
-    V4L2): backend is generally available but can't be used to capture by
-    name -- so callers should prefer opening by this integer index instead.
-    """
-    match = _VIDEO_NODE_RE.match(Path(device_path).resolve().name)
-    return int(match.group(1)) if match else None
-
-
-def _open_and_read(device_path: str, cv2: Any) -> tuple[bool, Any]:
-    # Explicit CAP_V4L2 avoids OpenCV probing other backends (seen falling
-    # through to its image-file loader, which obviously can't read a V4L2
-    # device node) when a by-id symlink isn't immediately recognized.
-    index = _video_index(device_path)
-    cap = cv2.VideoCapture(index, cv2.CAP_V4L2) if index is not None else cv2.VideoCapture(device_path, cv2.CAP_V4L2)
-    try:
-        if not cap.isOpened():
-            return False, None
-        return cap.read()
-    finally:
-        cap.release()
-
-
 def _capture_jpeg_sync(device_path: str) -> bytes:
-    import cv2  # lazy import: opencv isn't required unless a camera is used
+    # -f v4l2 -i <device>: read one frame from the V4L2 capture device.
+    # -frames:v 1: stop after a single frame. -f image2 pipe:1: encode
+    # that frame as a JPEG and write it to stdout instead of a file.
+    cmd = [
+        "ffmpeg",
+        "-loglevel", "error",
+        "-f", "v4l2",
+        "-i", device_path,
+        "-frames:v", "1",
+        "-q:v", "2",
+        "-f", "image2",
+        "pipe:1",
+    ]
 
-    # A freshly (re)plugged/booted USB webcam can take a moment before it's
-    # actually ready to open/stream, so a transient failure is retried
-    # rather than treated as a hard error on the first attempt.
-    ok = False
-    frame = None
+    last_error = ""
     for attempt in range(1, _OPEN_RETRIES + 1):
-        ok, frame = _open_and_read(device_path, cv2)
-        if ok:
-            break
+        try:
+            result = subprocess.run(cmd, capture_output=True, timeout=_CAPTURE_TIMEOUT_S)
+        except FileNotFoundError as exc:
+            raise CameraCaptureError(
+                "ffmpeg が見つかりません。`sudo apt install ffmpeg` でインストールしてください。"
+            ) from exc
+        except subprocess.TimeoutExpired:
+            last_error = "capture timed out"
+        else:
+            if result.returncode == 0 and result.stdout:
+                return result.stdout
+            last_error = result.stderr.decode("utf-8", errors="replace").strip()
+
+        # A freshly (re)plugged/booted USB webcam can take a moment before
+        # it's actually ready to stream, so a transient failure is retried
+        # rather than treated as a hard error on the first attempt.
         if attempt < _OPEN_RETRIES:
             time.sleep(_OPEN_RETRY_DELAY_S)
 
-    if not ok or frame is None:
-        raise CameraCaptureError(f"could not open/read camera device: {device_path}")
-
-    ok, buf = cv2.imencode(".jpg", frame)
-    if not ok:
-        raise CameraCaptureError("failed to encode captured frame as JPEG")
-    return buf.tobytes()
+    raise CameraCaptureError(f"could not capture from camera device: {device_path} ({last_error})")
 
 
 async def capture_jpeg(device_path: str) -> bytes:
