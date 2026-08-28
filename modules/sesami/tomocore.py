@@ -97,7 +97,7 @@ def _draw_mixed_text(
 
 def _paste_nameframe(base: Image.Image, camera_label: str) -> None:
     nameframe = Image.open(NAMEFRAME_PATH).convert("RGBA")
-    target_width = int(base.width * 0.45)
+    target_width = int(base.width * 0.75)
     scale = target_width / nameframe.width
     target_height = max(1, round(nameframe.height * scale))
     nameframe = nameframe.resize((target_width, target_height), Image.Resampling.LANCZOS)
