@@ -42,6 +42,7 @@ DEFAULT_CONFIGS: dict[str, dict] = {
     "sesami": {
         "collector_interval_minutes": 10,
         "sensors": {},
+        "aircon": {"device_id": "", "name": ""},
         "alert": {
             "enabled": True,
             "channel_id": 0,

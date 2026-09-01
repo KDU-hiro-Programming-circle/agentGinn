@@ -1,5 +1,5 @@
-"""Sesami Discord commands: /sesami status|camera|tomocore|system|aircon|
-graph|history|sensor add|remove|list|alert on|off."""
+"""Sesami Discord commands: /sesami status|camera|tomocore|system|
+aircon on|off|graph|history|sensor add|remove|list|alert on|off."""
 
 from __future__ import annotations
 
@@ -15,6 +15,7 @@ from shared.hardware import switchbot
 from shared.hardware import system as hw_system
 from shared.logger import get_logger
 
+from . import aircon as aircon_service
 from . import camera as camera_service
 from . import models
 from . import sensors as sensor_service
@@ -37,6 +38,7 @@ class SesamiCog(commands.Cog):
     sesami_group = app_commands.Group(name="sesami", description="部室環境監視")
     alert_group = app_commands.Group(name="alert", description="アラート通知のON/OFF", parent=sesami_group)
     sensor_group = app_commands.Group(name="sensor", description="SwitchBotセンサーの登録管理", parent=sesami_group)
+    aircon_group = app_commands.Group(name="aircon", description="エアコン制御", parent=sesami_group)
 
     async def _sensor_autocomplete(
         self, interaction: discord.Interaction, current: str
@@ -183,10 +185,80 @@ class SesamiCog(commands.Cog):
             if current.lower() in c.display_name.lower()
         ][:25]
 
-    @sesami_group.command(name="aircon", description="エアコン制御（将来実装予定）")
+    @aircon_group.command(name="on", description="エアコンをONにする")
+    @app_commands.describe(
+        temperature="設定温度 ℃（省略時26）",
+        mode="運転モード（省略時 冷房）",
+        fan_speed="風量（省略時 自動）",
+    )
+    @app_commands.choices(
+        mode=[app_commands.Choice(name=label, value=key) for key, label in aircon_service.MODE_LABELS.items()],
+        fan_speed=[
+            app_commands.Choice(name=label, value=key) for key, label in aircon_service.FAN_SPEED_LABELS.items()
+        ],
+    )
     @permissions.require("sesami")
-    async def aircon(self, interaction: discord.Interaction) -> None:
-        await interaction.response.send_message("エアコン自動制御は将来実装予定の機能です。")
+    async def aircon_on(
+        self,
+        interaction: discord.Interaction,
+        temperature: app_commands.Range[int, 16, 30] = aircon_service.DEFAULT_TEMPERATURE,
+        mode: str = aircon_service.DEFAULT_MODE,
+        fan_speed: str = aircon_service.DEFAULT_FAN_SPEED,
+    ) -> None:
+        aircon = aircon_service.get_aircon()
+        if aircon is None:
+            await interaction.response.send_message(
+                "エアコンが登録されていません。SwitchBotアプリでエアコンの仮想リモコンを登録してからBotを再起動してください。"
+            )
+            return
+
+        await interaction.response.defer(thinking=True)
+        client = switchbot.create_client(self.bot.settings.switchbot_token, self.bot.settings.switchbot_secret)
+        try:
+            await aircon_service.set_power(
+                client,
+                aircon,
+                power="on",
+                temperature=temperature,
+                mode=mode,
+                fan_speed=fan_speed,
+                source=str(interaction.user.id),
+            )
+        except Exception:
+            logger.exception("sesami aircon on failed: %s", aircon.device_id)
+            await interaction.followup.send("エアコンの操作に失敗しました。")
+            return
+
+        mode_label = aircon_service.MODE_LABELS[mode]
+        fan_label = aircon_service.FAN_SPEED_LABELS[fan_speed]
+        await interaction.followup.send(f"エアコンをONにしました（{temperature}℃ / {mode_label} / 風量{fan_label}）。")
+
+    @aircon_group.command(name="off", description="エアコンをOFFにする")
+    @permissions.require("sesami")
+    async def aircon_off(self, interaction: discord.Interaction) -> None:
+        aircon = aircon_service.get_aircon()
+        if aircon is None:
+            await interaction.response.send_message("エアコンが登録されていません。")
+            return
+
+        await interaction.response.defer(thinking=True)
+        client = switchbot.create_client(self.bot.settings.switchbot_token, self.bot.settings.switchbot_secret)
+        try:
+            await aircon_service.set_power(
+                client,
+                aircon,
+                power="off",
+                temperature=aircon_service.DEFAULT_TEMPERATURE,
+                mode=aircon_service.DEFAULT_MODE,
+                fan_speed=aircon_service.DEFAULT_FAN_SPEED,
+                source=str(interaction.user.id),
+            )
+        except Exception:
+            logger.exception("sesami aircon off failed: %s", aircon.device_id)
+            await interaction.followup.send("エアコンの操作に失敗しました。")
+            return
+
+        await interaction.followup.send("エアコンをOFFにしました。")
 
     @sesami_group.command(name="graph", description="ダッシュボードの案内とDiscord上での概要を表示")
     @app_commands.describe(count="概要に使う直近データ件数（デフォルト10、最大25）")

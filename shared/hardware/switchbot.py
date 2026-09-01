@@ -30,6 +30,9 @@ class SwitchBotError(Exception):
 class MeterClient(Protocol):
     async def get_meter(self, device_id: str) -> dict[str, float | None]: ...
     async def list_devices(self) -> list[dict[str, Any]]: ...
+    async def send_aircon_command(
+        self, device_id: str, *, temperature: int, mode: int, fan_speed: int, power: str
+    ) -> None: ...
 
 
 class SwitchBotClient:
@@ -83,6 +86,25 @@ class SwitchBotClient:
             raise SwitchBotError(f"SwitchBot API error: {body}")
         return body["body"].get("deviceList", [])
 
+    async def send_aircon_command(
+        self, device_id: str, *, temperature: int, mode: int, fan_speed: int, power: str
+    ) -> None:
+        """Send a "setAll" command to a virtual infrared-remote air
+        conditioner device (deviceType "Air Conditioner"). mode/fan_speed
+        are SwitchBot's numeric codes (see modules/sesami/aircon.py)."""
+        url = f"{BASE_URL}/devices/{device_id}/commands"
+        payload = {
+            "commandType": "command",
+            "command": "setAll",
+            "parameter": f"{temperature},{mode},{fan_speed},{power}",
+        }
+        async with httpx.AsyncClient(timeout=self._timeout) as client:
+            resp = await client.post(url, headers=self._headers(), json=payload)
+        resp.raise_for_status()
+        body = resp.json()
+        if body.get("statusCode") != 100:
+            raise SwitchBotError(f"SwitchBot API error: {body}")
+
 
 class MockMeterClient:
     """Returned when SwitchBot credentials aren't configured (local dev)."""
@@ -94,6 +116,11 @@ class MockMeterClient:
     async def list_devices(self) -> list[dict[str, Any]]:
         logger.warning("SwitchBot credentials not configured; skipping sensor auto-discovery")
         return []
+
+    async def send_aircon_command(
+        self, device_id: str, *, temperature: int, mode: int, fan_speed: int, power: str
+    ) -> None:
+        logger.warning("SwitchBot credentials not configured; aircon command not sent")
 
 
 def create_client(token: str, secret: str) -> MeterClient:

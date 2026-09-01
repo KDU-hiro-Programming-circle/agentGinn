@@ -168,3 +168,14 @@ async def update_alert_metric(
             """,
             (int(active), last_alert_at, utcnow_iso(), sensor_key, metric),
         )
+
+
+# ---- Aircon log -------------------------------------------------------
+
+
+async def insert_aircon_log(action: str, source: str) -> None:
+    async with database.connect() as conn:
+        await conn.execute(
+            "INSERT INTO sesami_aircon_log (action, source, created_at) VALUES (?, ?, ?)",
+            (action, source, utcnow_iso()),
+        )

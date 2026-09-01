@@ -1,6 +1,10 @@
 {
   "collector_interval_minutes": 10,
   "sensors": {},
+  "aircon": {
+    "device_id": "",
+    "name": ""
+  },
   "alert": {
     "enabled": true,
     "channel_id": 0,

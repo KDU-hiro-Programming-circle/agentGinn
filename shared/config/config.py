@@ -87,3 +87,12 @@ def remove_sesami_sensor(key: str) -> None:
         raise KeyError(f"unknown sesami sensor: {key}")
     del sensors[key]
     save("sesami", data)
+
+
+def set_sesami_aircon(device_id: str, name: str | None = None) -> None:
+    """Register the clubroom's SwitchBot virtual air conditioner remote.
+    Unlike sensors there's only ever one, so this replaces the existing
+    entry rather than being keyed/numbered."""
+    data = load("sesami")
+    data["aircon"] = {"device_id": device_id, "name": name or "エアコン"}
+    save("sesami", data)
