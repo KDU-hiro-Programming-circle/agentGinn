@@ -84,7 +84,6 @@ class SwitchBotClient:
         body = resp.json()
         if body.get("statusCode") != 100:
             raise SwitchBotError(f"SwitchBot API error: {body}")
-
         devices = body["body"].get("deviceList", [])
         for remote in body["body"].get("infraredRemoteList",[]):
             remote["deviceType"] = remote.pop("remoteType",None)

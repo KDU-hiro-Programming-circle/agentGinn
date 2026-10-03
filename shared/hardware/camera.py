@@ -24,8 +24,8 @@ from pathlib import Path
 
 _locks: dict[str, asyncio.Lock] = {}
 _OPEN_RETRIES = 3
-_OPEN_RETRY_DELAY_S = 1.0
-_CAPTURE_TIMEOUT_S = 10.0
+_OPEN_RETRY_DELAY_S = 3.0
+_CAPTURE_TIMEOUT_S = 20.0
 
 
 class CameraCaptureError(Exception):
