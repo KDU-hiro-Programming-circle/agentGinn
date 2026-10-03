@@ -20,18 +20,22 @@ logger = get_logger(__name__)
 
 async def discover_and_register_cameras() -> list[models.Camera]:
     existing = await models.list_cameras()
-    known_paths = {cam.device_path for cam in existing}
+    by_path = {cam.device_path: cam for cam in existing}
     display_names = [cam.display_name for cam in existing]
 
     registered: list[models.Camera] = []
     for path in hw_camera.list_v4l2_devices():
         device_path = str(path)
-        if device_path in known_paths:
+        known = by_path.get(device_path)
+        if known is not None:
+            if not known.enabled:
+                await models.set_camera_enabled(known.uuid, True)
+                logger.info("sesami camera re-enabled: %s (%s)", known.display_name, device_path)
             continue
         display_name = next_numbered_key(display_names, "camera_")
         cam = await models.insert_camera(display_name, device_path)
         display_names.append(display_name)
-        known_paths.add(device_path)
+        by_path[device_path] = cam
         registered.append(cam)
         logger.info("sesami camera auto-registered: %s (%s)", display_name, device_path)
     return registered
