@@ -72,7 +72,7 @@ def _detect_people(image: Image.Image) -> list[tuple[int, int, int, int]]:
     cv_image = cv2.cvtColor(np.array(image), cv2.COLOR_RGB2BGR)
     hog = cv2.HOGDescriptor()
     hog.setSVMDetector(cv2.HOGDescriptor_getDefaultPeopleDetector())
-    rects, _weights = hog.detectMultiScale(cv_image, winStride=(8, 8), padding=(8, 8), scale=1.05)
+    rects, _weights = hog.detectMultiScale(cv_image, winStride=(4, 4), padding=(32, 32), scale=1.05)
     return [tuple(int(v) for v in rect) for rect in rects]
 
 
