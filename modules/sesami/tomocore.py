@@ -3,7 +3,8 @@ rough person-count estimate, on top of a live camera capture.
 
 People counting uses OpenCV's bundled HOG pedestrian detector (no extra
 model download needed) -- it's a rough estimate, not an exact count, and
-is biased toward people standing/facing the camera.
+is biased toward people standing/facing the camera. Each detection is
+outlined in red, drawn before (so visually underneath) nameframeT.png.
 """
 
 from __future__ import annotations
@@ -27,6 +28,7 @@ _LOCATION_LABEL = "部室"
 _WATER_BLUE = (100, 200, 255)
 _DARK_TEXT = (40, 40, 40)
 _LIGHT_TEXT = (255, 255, 255)
+_BOX_RED = (255, 0, 0, 255)
 
 # Searched in order; the first one found is used. Ubuntu doesn't ship a
 # Japanese-capable font by default, so one of these packages must be
@@ -63,12 +65,15 @@ def _load_font(size: int) -> ImageFont.FreeTypeFont:
     )
 
 
-def _count_people(image: Image.Image) -> int:
+def _detect_people(image: Image.Image) -> list[tuple[int, int, int, int]]:
+    """Returns one (x, y, w, h) box per detected person, in `image`'s own
+    pixel coordinates (no resizing happens before detection, so these map
+    directly onto the base image)."""
     cv_image = cv2.cvtColor(np.array(image), cv2.COLOR_RGB2BGR)
     hog = cv2.HOGDescriptor()
     hog.setSVMDetector(cv2.HOGDescriptor_getDefaultPeopleDetector())
     rects, _weights = hog.detectMultiScale(cv_image, winStride=(8, 8), padding=(8, 8), scale=1.05)
-    return len(rects)
+    return [tuple(int(v) for v in rect) for rect in rects]
 
 
 def _draw_centered_text(
@@ -93,6 +98,13 @@ def _draw_mixed_text(
     for (text, color), width in zip(segments, widths):
         draw.text((x, y), text, font=font, fill=color)
         x += width
+
+
+def _draw_person_boxes(base: Image.Image, boxes: list[tuple[int, int, int, int]]) -> None:
+    line_width = max(2, round(base.width / 200))
+    draw = ImageDraw.Draw(base)
+    for x, y, w, h in boxes:
+        draw.rectangle([(x, y), (x + w, y + h)], outline=_BOX_RED, width=line_width)
 
 
 def _paste_nameframe(base: Image.Image, camera_label: str) -> None:
@@ -136,10 +148,13 @@ def _draw_people_banner(base: Image.Image, count: int) -> None:
 
 def _compose_sync(jpeg_bytes: bytes, camera_label: str) -> bytes:
     image = Image.open(io.BytesIO(jpeg_bytes)).convert("RGBA")
-    count = _count_people(image.convert("RGB"))
+    boxes = _detect_people(image.convert("RGB"))
 
+    # Detection boxes are drawn first so nameframeT.png (pasted next) sits
+    # on top of them in case a box happens to overlap the top of the frame.
+    _draw_person_boxes(image, boxes)
     _paste_nameframe(image, camera_label)
-    _draw_people_banner(image, count)
+    _draw_people_banner(image, len(boxes))
 
     buf = io.BytesIO()
     image.convert("RGB").save(buf, format="JPEG", quality=90)
