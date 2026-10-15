@@ -5,6 +5,11 @@ registers them automatically, then validates each device_path; a camera
 whose path is missing is disabled on its own -- Sesami and the rest of the
 bot keep running. The primary key is always the uuid (by-id paths can
 collide/swap when identical camera models are plugged in).
+
+capture() is the single chokepoint every camera-using feature (/sesami
+camera, /sesami tomocore) goes through, so dark-frame enhancement (see
+image_enhance.py) applies uniformly without each caller remembering to
+request it.
 """
 
 from __future__ import annotations
@@ -13,7 +18,7 @@ from shared.hardware import camera as hw_camera
 from shared.logger import get_logger
 from shared.utils import next_numbered_key
 
-from . import models
+from . import image_enhance, models
 
 logger = get_logger(__name__)
 
@@ -60,4 +65,5 @@ async def list_enabled_cameras() -> list[models.Camera]:
 
 
 async def capture(camera: models.Camera) -> bytes:
-    return await hw_camera.capture_jpeg(camera.device_path)
+    jpeg_bytes = await hw_camera.capture_jpeg(camera.device_path)
+    return await image_enhance.enhance_if_dark(jpeg_bytes)

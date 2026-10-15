@@ -6,10 +6,10 @@ model download needed) -- it's a rough estimate, not an exact count, and
 is biased toward people standing/facing the camera. Each detection is
 outlined in red, drawn before (so visually underneath) nameframeT.png.
 
-A frame too dark to be readable (mean brightness below
-_DARK_MEAN_BRIGHTNESS) is converted to a denoised, contrast-enhanced
-grayscale/binary silhouette before both detection and composition --
-see _binarize_dark_image().
+Dark-frame enhancement happens upstream, in modules/sesami/camera.py's
+capture() (see image_enhance.py) -- by the time jpeg_bytes reaches
+compose() here it's already a binarized silhouette if the scene was dark,
+so detection and composition both naturally operate on that.
 """
 
 from __future__ import annotations
@@ -34,12 +34,6 @@ _WATER_BLUE = (100, 200, 255)
 _DARK_TEXT = (40, 40, 40)
 _LIGHT_TEXT = (255, 255, 255)
 _BOX_RED = (255, 0, 0, 255)
-
-# Mean grayscale brightness (0-255) below which a frame is treated as a
-# dark-room shot and run through _binarize_dark_image() instead of being
-# used as-is. 50 is a standard "underexposed" rule-of-thumb cutoff; real
-# near-total-darkness captures measured well under 10.
-_DARK_MEAN_BRIGHTNESS = 50
 
 # Searched in order; the first one found is used. Ubuntu doesn't ship a
 # Japanese-capable font by default, so one of these packages must be
@@ -74,33 +68,6 @@ def _load_font(size: int) -> ImageFont.FreeTypeFont:
     raise TomocoreError(
         "日本語フォントが見つかりません。`sudo apt install fonts-noto-cjk` 等でインストールしてください。"
     )
-
-
-def _mean_brightness(image: Image.Image) -> float:
-    return float(np.array(image.convert("L"), dtype=np.float32).mean())
-
-
-def _binarize_dark_image(image: Image.Image) -> Image.Image:
-    """Grayscale + binarize a dark-room capture so a person's silhouette is
-    at least visible, instead of returning a nearly-black, unreadable photo.
-
-    Tuned against a real near-total-darkness sample (mean brightness ~4/255):
-    plain global thresholding (even Otsu's automatic variant) on the raw
-    frame only picks out the single brightest highlight, because almost
-    every pixel sits in the camera's noise floor. The fix is to denoise
-    first (median blur), then apply a *mild* CLAHE (strong settings just
-    amplify sensor noise into speckle) to recover local contrast, blur
-    again to smooth the result, and only then run Otsu -- which picks its
-    threshold per-frame rather than a fixed magic number that would be
-    overfit to one exposure level.
-    """
-    gray = cv2.cvtColor(np.array(image.convert("RGB")), cv2.COLOR_RGB2GRAY)
-    denoised = cv2.medianBlur(gray, 5)
-    clahe = cv2.createCLAHE(clipLimit=4.0, tileGridSize=(16, 16))
-    enhanced = clahe.apply(denoised)
-    smoothed = cv2.GaussianBlur(enhanced, (9, 9), 0)
-    _threshold, binary = cv2.threshold(smoothed, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)
-    return Image.fromarray(binary).convert("RGB")
 
 
 def _detect_people(image: Image.Image) -> list[tuple[int, int, int, int]]:
@@ -185,11 +152,8 @@ def _draw_people_banner(base: Image.Image, count: int) -> None:
 
 
 def _compose_sync(jpeg_bytes: bytes, camera_label: str) -> bytes:
-    image = Image.open(io.BytesIO(jpeg_bytes)).convert("RGB")
-    if _mean_brightness(image) < _DARK_MEAN_BRIGHTNESS:
-        image = _binarize_dark_image(image)
-    image = image.convert("RGBA")
-
+    # jpeg_bytes is already dark-enhanced if needed -- see module docstring.
+    image = Image.open(io.BytesIO(jpeg_bytes)).convert("RGBA")
     boxes = _detect_people(image.convert("RGB"))
 
     # Detection boxes are drawn first so nameframeT.png (pasted next) sits
