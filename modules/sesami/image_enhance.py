@@ -1,8 +1,15 @@
 """Dark-frame enhancement shared by every Sesami feature that returns a
 camera capture (currently /sesami camera and /sesami tomocore, via
-modules/sesami/camera.py's capture()) -- a frame too dark to read is
-turned into a denoised, contrast-enhanced grayscale/binary silhouette
-instead of being sent out as a nearly-black, unreadable photo.
+modules/sesami/camera.py's capture()) -- when the caller explicitly asks
+for night mode, the frame is turned into a denoised, contrast-enhanced
+grayscale/binary silhouette instead of being sent out as a nearly-black,
+unreadable photo.
+
+This used to auto-detect darkness from mean brightness, but that was
+replaced with an explicit night_mode flag the user controls per capture
+(/sesami camera / /sesami tomocore's night_mode option) -- simpler and
+more predictable than a heuristic threshold guessing what counts as
+"dark enough".
 """
 
 from __future__ import annotations
@@ -13,16 +20,6 @@ import io
 import cv2
 import numpy as np
 from PIL import Image
-
-# Mean grayscale brightness (0-255) below which a frame is treated as a
-# dark-room shot and run through binarize_dark_image() instead of being
-# used as-is. 50 is a standard "underexposed" rule-of-thumb cutoff; real
-# near-total-darkness captures measured well under 10.
-DARK_MEAN_BRIGHTNESS = 50
-
-
-def mean_brightness(image: Image.Image) -> float:
-    return float(np.array(image.convert("L"), dtype=np.float32).mean())
 
 
 def binarize_dark_image(image: Image.Image) -> Image.Image:
@@ -48,18 +45,17 @@ def binarize_dark_image(image: Image.Image) -> Image.Image:
     return Image.fromarray(binary).convert("RGB")
 
 
-def _enhance_if_dark_sync(jpeg_bytes: bytes) -> bytes:
+def _apply_night_mode_sync(jpeg_bytes: bytes) -> bytes:
     image = Image.open(io.BytesIO(jpeg_bytes)).convert("RGB")
-    if mean_brightness(image) >= DARK_MEAN_BRIGHTNESS:
-        return jpeg_bytes
-
     enhanced = binarize_dark_image(image)
     buf = io.BytesIO()
     enhanced.save(buf, format="JPEG", quality=90)
     return buf.getvalue()
 
 
-async def enhance_if_dark(jpeg_bytes: bytes) -> bytes:
-    """Returns jpeg_bytes unchanged if the frame isn't dark; otherwise
-    returns a binarized-silhouette JPEG in its place."""
-    return await asyncio.to_thread(_enhance_if_dark_sync, jpeg_bytes)
+async def apply_night_mode(jpeg_bytes: bytes, night_mode: bool) -> bytes:
+    """Returns jpeg_bytes unchanged unless night_mode is True, in which
+    case a binarized-silhouette JPEG is returned in its place."""
+    if not night_mode:
+        return jpeg_bytes
+    return await asyncio.to_thread(_apply_night_mode_sync, jpeg_bytes)

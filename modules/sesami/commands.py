@@ -124,9 +124,14 @@ class SesamiCog(commands.Cog):
         return matched, None
 
     @sesami_group.command(name="camera", description="部室のカメラで撮影して送信")
-    @app_commands.describe(camera="カメラ名（省略時は先頭のカメラ）")
+    @app_commands.describe(
+        camera="カメラ名（省略時は先頭のカメラ）",
+        night_mode="暗所補正（グレースケール2値化）のON/OFF（省略時OFF）",
+    )
     @permissions.require("sesami")
-    async def camera_command(self, interaction: discord.Interaction, camera: str | None = None) -> None:
+    async def camera_command(
+        self, interaction: discord.Interaction, camera: str | None = None, night_mode: bool | None = None
+    ) -> None:
         await interaction.response.defer(thinking=True)
         target, error = await self._resolve_camera(camera)
         if target is None:
@@ -134,7 +139,7 @@ class SesamiCog(commands.Cog):
             return
 
         try:
-            jpeg_bytes = await camera_service.capture(target)
+            jpeg_bytes = await camera_service.capture(target, night_mode=bool(night_mode))
         except Exception:
             logger.exception("sesami camera capture failed: %s", target.uuid)
             await interaction.followup.send(f"カメラ `{target.display_name}` の撮影に失敗しました。")
@@ -144,9 +149,14 @@ class SesamiCog(commands.Cog):
         await interaction.followup.send(content=f"\U0001f4f7 {target.display_name}", file=file)
 
     @sesami_group.command(name="tomocore", description="カメラ画像に名札フレームと在室人数の推定を合成して送信")
-    @app_commands.describe(camera="カメラ名（省略時は先頭のカメラ）")
+    @app_commands.describe(
+        camera="カメラ名（省略時は先頭のカメラ）",
+        night_mode="暗所補正（グレースケール2値化）のON/OFF（省略時OFF）",
+    )
     @permissions.require("sesami")
-    async def tomocore(self, interaction: discord.Interaction, camera: str | None = None) -> None:
+    async def tomocore(
+        self, interaction: discord.Interaction, camera: str | None = None, night_mode: bool | None = None
+    ) -> None:
         await interaction.response.defer(thinking=True)
         target, error = await self._resolve_camera(camera)
         if target is None:
@@ -154,7 +164,7 @@ class SesamiCog(commands.Cog):
             return
 
         try:
-            jpeg_bytes = await camera_service.capture(target)
+            jpeg_bytes = await camera_service.capture(target, night_mode=bool(night_mode))
         except Exception:
             logger.exception("sesami tomocore capture failed: %s", target.uuid)
             await interaction.followup.send(f"カメラ `{target.display_name}` の撮影に失敗しました。")

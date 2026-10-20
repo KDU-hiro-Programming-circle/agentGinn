@@ -7,9 +7,8 @@ bot keep running. The primary key is always the uuid (by-id paths can
 collide/swap when identical camera models are plugged in).
 
 capture() is the single chokepoint every camera-using feature (/sesami
-camera, /sesami tomocore) goes through, so dark-frame enhancement (see
-image_enhance.py) applies uniformly without each caller remembering to
-request it.
+camera, /sesami tomocore) goes through, so the night_mode binarization
+(see image_enhance.py) is applied consistently from one place.
 """
 
 from __future__ import annotations
@@ -64,6 +63,6 @@ async def list_enabled_cameras() -> list[models.Camera]:
     return [cam for cam in await models.list_cameras() if cam.enabled]
 
 
-async def capture(camera: models.Camera) -> bytes:
+async def capture(camera: models.Camera, night_mode: bool = False) -> bytes:
     jpeg_bytes = await hw_camera.capture_jpeg(camera.device_path)
-    return await image_enhance.enhance_if_dark(jpeg_bytes)
+    return await image_enhance.apply_night_mode(jpeg_bytes, night_mode)
