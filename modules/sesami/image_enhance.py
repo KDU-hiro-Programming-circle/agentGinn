@@ -40,7 +40,7 @@ def enhance_dark_image(image: Image.Image) -> Image.Image:
     clahe = cv2.createCLAHE(clipLimit=4.0, tileGridSize=(16, 16))
     enhanced = clahe.apply(denoised)
     smoothed = cv2.GaussianBlur(enhanced, (9, 9), 0)
-    whiter = cv2.convertScaleAbs(smoothed, alpha=1.0, beta=50)
+    whiter = cv2.convertScaleAbs(smoothed, alpha=1.0, beta=100)
     return Image.fromarray(whiter).convert("RGB")
 
 
